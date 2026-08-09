@@ -64,6 +64,30 @@ class SearchScreen(ScrollView):
     def on_skill2_selected(self, _text: str) -> None:
         self._update_pt_default(2)
 
+    def apply_external_result(
+        self,
+        skill1_name: str | None = None,
+        skill1_pts: int | None = None,
+        skill2_name: str | None = None,
+        skill2_pts: int | None = None,
+        slot: int | None = None,
+    ) -> None:
+        """OCR読取タブなど、外部から検索条件を反映するための公開API。
+        該当フィールドが分かった項目だけを上書きし、不明な項目は現状維持する。
+        (このメソッド自体はSwitchや画像処理には一切関与しない、単なる
+        フォーム入力の代行)"""
+        if skill1_name is not None and skill1_name in self._skill1_names:
+            self.ids.skill1_spinner.text = skill1_name  # on_textで既定Ptも入る
+            if skill1_pts is not None:
+                self.ids.skill1_pt.text = str(skill1_pts)
+        if skill2_name is not None and skill2_name in self._skill2_names:
+            self.ids.skill2_check.active = True
+            self.ids.skill2_spinner.text = skill2_name
+            if skill2_pts is not None:
+                self.ids.skill2_pt.text = str(skill2_pts)
+        if slot is not None and str(slot) in self.ids.slot_spinner.values:
+            self.ids.slot_spinner.text = str(slot)
+
     def _update_pt_default(self, which: int) -> None:
         kind = int(App.get_running_app().kind)
         table = KIND_TABLES[kind]
@@ -80,6 +104,7 @@ class SearchScreen(ScrollView):
             return
         idx = names.index(spinner.text)
         lo, hi = sp_table[idx]
+        lo, hi = min(lo, hi), max(lo, hi)  # 一部スキルは元データが (lo>hi) の順で格納されているため
         hint.text = f"Pt: {lo}〜{hi}"
         pt_input.text = str(hi)
 
@@ -96,6 +121,7 @@ class SearchScreen(ScrollView):
             return
         s1_idx = self._skill1_names.index(self.ids.skill1_spinner.text)
         s1_lo, s1_hi = table.sp1[s1_idx]
+        s1_lo, s1_hi = min(s1_lo, s1_hi), max(s1_lo, s1_hi)
         s1_pts = clamp(safe_int(self.ids.skill1_pt.text, s1_hi), s1_lo, s1_hi)
         self.ids.skill1_pt.text = str(s1_pts)
 
@@ -105,6 +131,7 @@ class SearchScreen(ScrollView):
             if self.ids.skill2_spinner.text in self._skill2_names:
                 s2_idx = self._skill2_names.index(self.ids.skill2_spinner.text)
                 s2_lo, s2_hi = table.sp2[s2_idx]
+                s2_lo, s2_hi = min(s2_lo, s2_hi), max(s2_lo, s2_hi)
                 s2_pts = clamp(safe_int(self.ids.skill2_pt.text, s2_hi), s2_lo, s2_hi)
                 self.ids.skill2_pt.text = str(s2_pts)
 
