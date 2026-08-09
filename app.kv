@@ -1,0 +1,119 @@
+#:kivy 2.3.1
+#:import SearchScreen screens.search_screen.SearchScreen
+#:import AroundScreen screens.around_screen.AroundScreen
+#:import ComboScreen screens.combo_screen.ComboScreen
+#:import AimPointScreen screens.aimpoint_screen.AimPointScreen
+
+<RootLayout>:
+    orientation: 'vertical'
+    canvas.before:
+        Color:
+            rgba: 0.08, 0.09, 0.11, 1
+        Rectangle:
+            pos: self.pos
+            size: self.size
+
+    BoxLayout:
+        orientation: 'vertical'
+        size_hint_y: None
+        height: '104dp'
+        padding: ['8dp', '6dp', '8dp', '4dp']
+        spacing: '4dp'
+        canvas.before:
+            Color:
+                rgba: 0.12, 0.13, 0.16, 1
+            Rectangle:
+                pos: self.pos
+                size: self.size
+
+        Label:
+            text: 'MHXX お守り乱数計算機'
+            bold: True
+            font_size: '15sp'
+            size_hint_y: None
+            height: '22dp'
+            halign: 'left'
+            valign: 'middle'
+            text_size: self.size
+
+        BoxLayout:
+            size_hint_y: None
+            height: '34dp'
+            spacing: '4dp'
+            ToggleButton:
+                text: '風化したお守り'
+                group: 'kind'
+                state: 'down'
+                font_size: '11sp'
+                on_release: app.set_kind(0)
+            ToggleButton:
+                text: '古びたお守り'
+                group: 'kind'
+                font_size: '11sp'
+                on_release: app.set_kind(1)
+            ToggleButton:
+                text: '光るお守り'
+                group: 'kind'
+                font_size: '11sp'
+                on_release: app.set_kind(2)
+            ToggleButton:
+                text: 'なぞのお守り'
+                group: 'kind'
+                font_size: '11sp'
+                on_release: app.set_kind(3)
+
+        BoxLayout:
+            size_hint_y: None
+            height: '30dp'
+            spacing: '4dp'
+            Label:
+                text: 'fps表示'
+                size_hint_x: None
+                width: '54dp'
+                font_size: '11sp'
+                halign: 'left'
+                valign: 'middle'
+                text_size: self.size
+            ToggleButton:
+                text: 'オリジナル(30fps)'
+                group: 'fps'
+                state: 'down'
+                font_size: '11sp'
+                on_release: app.set_fps(30)
+            ToggleButton:
+                text: 'Switch2(60fps)'
+                group: 'fps'
+                font_size: '11sp'
+                on_release: app.set_fps(60)
+
+    TabbedPanel:
+        id: tabs
+        do_default_tab: False
+        tab_width: (self.width / 4) if self.width else 100
+        tab_height: '44dp'
+
+        TabbedPanelItem:
+            id: search_tab_item
+            text: '検索'
+            font_size: '13sp'
+            SearchScreen:
+                id: search_screen
+
+        TabbedPanelItem:
+            id: around_tab_item
+            text: '周辺確認'
+            font_size: '13sp'
+            AroundScreen:
+                id: around_screen
+
+        TabbedPanelItem:
+            text: '調合'
+            font_size: '13sp'
+            ComboScreen:
+                id: combo_screen
+
+        TabbedPanelItem:
+            text: '狙い目'
+            font_size: '13sp'
+            AimPointScreen:
+                id: aimpoint_screen
