@@ -31,8 +31,23 @@ jobs:
           restore-keys: |
             buildozer-local-
 
+      # ArtemSBulgakov/buildozer-action の Dockerfile は ppa:openjdk-r/ppa を
+      # 追加してJDK17を入れているが、ベースイメージがUbuntu 26.04 (resolute) に
+      # 切り替わった影響でこのPPAがまだresolute向けパッケージを公開しておらず
+      # apt update が404で失敗する。本家が直るまでの暫定パッチとして、
+      # アクションをローカルにチェックアウトしてPPA追加行だけ削除して使う。
+      - name: Checkout patched buildozer-action
+        uses: actions/checkout@v4
+        with:
+          repository: ArtemSBulgakov/buildozer-action
+          ref: v1
+          path: buildozer-action-patched
+
+      - name: Remove broken openjdk-r PPA line
+        run: sed -i '/add-apt-repository ppa:openjdk-r\/ppa/d' buildozer-action-patched/Dockerfile
+
       - name: Build with Buildozer
-        uses: ArtemSBulgakov/buildozer-action@v1
+        uses: ./buildozer-action-patched
         id: buildozer
         with:
           workdir: .
