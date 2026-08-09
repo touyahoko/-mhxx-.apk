@@ -1,0 +1,186 @@
+#:kivy 2.3.1
+
+<IntInput>:
+    multiline: False
+    font_size: '14sp'
+    padding: ['8dp', '10dp', '8dp', '10dp']
+    background_color: 0.90, 0.90, 0.93, 1
+    foreground_color: 0.05, 0.05, 0.08, 1
+    cursor_color: 0.1, 0.1, 0.1, 1
+    size_hint_y: None
+    height: '42dp'
+
+<SectionLabel@Label>:
+    size_hint_y: None
+    height: '30dp'
+    bold: True
+    color: 0.55, 0.78, 1, 1
+    font_size: '14sp'
+    halign: 'left'
+    valign: 'middle'
+    text_size: self.size
+
+<FieldLabel@Label>:
+    color: 0.85, 0.85, 0.9, 1
+    font_size: '13sp'
+    size_hint_x: None
+    width: '92dp'
+    halign: 'left'
+    valign: 'middle'
+    text_size: self.size
+
+<HintLabel@Label>:
+    color: 0.55, 0.55, 0.62, 1
+    font_size: '12sp'
+    halign: 'left'
+    valign: 'top'
+    text_size: self.width, None
+    size_hint_y: None
+    height: self.texture_size[1] + 6
+
+<PrimaryButton@Button>:
+    size_hint_y: None
+    height: '46dp'
+    font_size: '14sp'
+    background_normal: ''
+    background_color: 0.20, 0.45, 0.75, 1
+    color: 1, 1, 1, 1
+
+<DangerButton@Button>:
+    size_hint_y: None
+    height: '46dp'
+    font_size: '14sp'
+    background_normal: ''
+    background_color: 0.65, 0.22, 0.22, 1
+    color: 1, 1, 1, 1
+
+<PanelBox@BoxLayout>:
+    canvas.before:
+        Color:
+            rgba: 0.12, 0.13, 0.16, 1
+        Rectangle:
+            pos: self.pos
+            size: self.size
+
+<CharmResultCard>:
+    orientation: 'vertical'
+    size_hint_y: None
+    height: self.minimum_height
+    padding: [10, 8, 10, 8]
+    spacing: 3
+    canvas.before:
+        Color:
+            rgba: (0.20, 0.22, 0.27, 1) if root.is_center else (0.15, 0.16, 0.19, 1)
+        Rectangle:
+            pos: self.pos
+            size: self.size
+        Color:
+            rgba: 0.28, 0.31, 0.37, 1
+        Line:
+            points: [self.x, self.y, self.x + self.width, self.y]
+            width: 1
+
+    BoxLayout:
+        size_hint_y: None
+        height: self.minimum_height
+        spacing: 8
+        Label:
+            text: root.offset_text
+            size_hint_x: None
+            width: '54dp' if root.offset_text else 0
+            bold: True
+            color: 0.6, 0.85, 1, 1
+            font_size: '13sp'
+            halign: 'left'
+            valign: 'middle'
+            text_size: self.size
+        Label:
+            text: 'F' + str(root.frame)
+            bold: True
+            color: 0.95, 0.85, 0.35, 1
+            font_size: '15sp'
+            halign: 'left'
+            valign: 'middle'
+            text_size: self.size
+        Label:
+            text: root.rarity_text
+            color: root.rarity_color
+            bold: True
+            size_hint_x: None
+            width: '64dp'
+            font_size: '13sp'
+            halign: 'right'
+            valign: 'middle'
+            text_size: self.size
+
+    Label:
+        text: root.skill1_text + (('  /  ' + root.skill2_text) if root.skill2_text else '')
+        color: root.rarity_color
+        font_size: '14sp'
+        size_hint_y: None
+        height: self.texture_size[1] + 4
+        halign: 'left'
+        valign: 'top'
+        text_size: self.width, None
+
+    BoxLayout:
+        size_hint_y: None
+        height: self.minimum_height
+        spacing: 10
+        Label:
+            text: 'スロット' + root.slot_text
+            color: 0.7, 0.7, 0.76, 1
+            font_size: '12sp'
+            size_hint_x: None
+            width: '90dp'
+            halign: 'left'
+            valign: 'middle'
+            text_size: self.size
+        Label:
+            text: root.elapsed_text
+            color: 0.7, 0.7, 0.76, 1
+            font_size: '12sp'
+            halign: 'left'
+            valign: 'middle'
+            text_size: self.size
+
+    Label:
+        text: '連打法: ' + root.mash_text
+        color: 0.5, 0.5, 0.58, 1
+        font_size: '11sp'
+        size_hint_y: None
+        height: self.texture_size[1] + 2
+        halign: 'left'
+        valign: 'top'
+        text_size: self.width, None
+
+<FrameResultCard>:
+    size_hint_y: None
+    height: '42dp'
+    padding: [10, 4, 10, 4]
+    canvas.before:
+        Color:
+            rgba: 0.15, 0.16, 0.19, 1
+        Rectangle:
+            pos: self.pos
+            size: self.size
+        Color:
+            rgba: 0.28, 0.31, 0.37, 1
+        Line:
+            points: [self.x, self.y, self.x + self.width, self.y]
+            width: 1
+    Label:
+        text: root.frame_text
+        bold: True
+        color: 0.95, 0.85, 0.35, 1
+        font_size: '14sp'
+        halign: 'left'
+        valign: 'middle'
+        text_size: self.size
+    Label:
+        text: root.elapsed_text
+        color: 0.75, 0.75, 0.82, 1
+        font_size: '12sp'
+        halign: 'right'
+        valign: 'middle'
+        text_size: self.size
