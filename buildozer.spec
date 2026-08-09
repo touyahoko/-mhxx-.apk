@@ -10,7 +10,7 @@ source.exclude_dirs = tests, bin, .buildozer, .github, .git
 
 version = 1.0.0
 
-requirements = python3,kivy==2.3.1
+requirements = python3,kivy==2.3.1,plyer
 
 orientation = portrait
 fullscreen = 0
@@ -18,11 +18,19 @@ fullscreen = 0
 icon.filename = %(source.dir)s/assets/icons/icon.png
 
 # Android固有設定
-android.permissions =
+# CAMERA: 鑑定結果の撮影用。READ_MEDIA_IMAGES/READ_EXTERNAL_STORAGE:
+# ギャラリーからの画像選択用 (Android 13+ / 12以下の両方をカバー)。
+android.permissions = CAMERA,READ_MEDIA_IMAGES,READ_EXTERNAL_STORAGE
 android.api = 34
 android.minapi = 23
 android.archs = arm64-v8a,armeabi-v7a
 android.allow_backup = True
+
+# Google ML Kit (オンデバイス日本語テキスト認識、無料・APIキー不要)。
+# ocr/android_ocr.py から pyjnius 経由で呼び出す。ML KitはAndroidXが
+# 前提のため enable_androidx も有効化する。
+android.gradle_dependencies = com.google.mlkit:text-recognition-japanese:16.0.1
+android.enable_androidx = True
 
 # 個人利用目的のツールのため、Google Playへの公開は想定していません。
 # (公開する場合は package.domain を実際に所有するドメインの逆順に、

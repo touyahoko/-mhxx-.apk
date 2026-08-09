@@ -54,6 +54,7 @@ class MhxxRngApp(App):
             "around_screen.kv",
             "combo_screen.kv",
             "aimpoint_screen.kv",
+            "ocr_screen.kv",
         ):
             Builder.load_file(os.path.join(BASE_DIR, "screens", kv_name))
         Builder.load_file(os.path.join(BASE_DIR, "app.kv"))

@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Buildozer / python-for-android のビルド生成物
+# (GitHub Actions が毎回クリーンに生成するので、リポジトリには含めない)
+.buildozer/
+bin/
+
+# OS / エディタ
+.DS_Store
+.vscode/
+.idea/
