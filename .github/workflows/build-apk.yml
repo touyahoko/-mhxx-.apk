@@ -46,6 +46,17 @@ jobs:
       - name: Remove broken openjdk-r PPA line
         run: sed -i '/add-apt-repository ppa:openjdk-r\/ppa/d' buildozer-action-patched/Dockerfile
 
+      # entrypoint.py が起動直後に `sudo chown -R user /github/workspace` を
+      # 実行するが、ベースイメージ側で "user" アカウントが正しく作られていない
+      # (buildozer-action issue #42 として既知・未解決) ため
+      # "chown: invalid user: 'user'" で毎回落ちる。存在しなければ作る形で回避する。
+      - name: Ensure buildozer 'user' account exists
+        run: |
+          cat > /tmp/ensure_user.txt << 'EOF'
+          RUN if ! id -u user >/dev/null 2>&1; then sudo useradd --create-home --shell /bin/bash user && sudo usermod --append --groups sudo user && echo "user ALL=(ALL) NOPASSWD: ALL" | sudo tee -a /etc/sudoers >/dev/null; fi
+          EOF
+          sed -i '1r /tmp/ensure_user.txt' buildozer-action-patched/Dockerfile
+
       - name: Build with Buildozer
         uses: ./buildozer-action-patched
         id: buildozer
