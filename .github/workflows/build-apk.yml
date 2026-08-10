@@ -57,6 +57,14 @@ jobs:
           EOF
           sed -i '1r /tmp/ensure_user.txt' buildozer-action-patched/Dockerfile
 
+      # ベースイメージがPython 3.14になり、entrypoint.py内の
+      # `pip install --user buildozer` がPEP 668の
+      # externally-managed-environmentで拒否される。
+      # PIP_BREAK_SYSTEM_PACKAGES=1 で --break-system-packages 相当を
+      # 常時有効にして回避する。
+      - name: Allow pip installs on externally-managed Python
+        run: sed -i '1a ENV PIP_BREAK_SYSTEM_PACKAGES=1' buildozer-action-patched/Dockerfile
+
       - name: Build with Buildozer
         uses: ./buildozer-action-patched
         id: buildozer
