@@ -95,13 +95,16 @@ jobs:
       # Python 3.14で追加された remote_debugging モジュール(PEP 768)が
       # Android NDKのbionic libcでは未対応で、クロスコンパイルが
       # 失敗する既知バグ(kivy/python-for-android issue #3274)。
-      # requirementsのpython3を3.12(このモジュールが存在しないバージョン)に
-      # 固定して回避する。ログで確認したところ、p4aはビルドに使うhostpython3の
-      # バージョンがpython3と完全一致している必要があり(違うと
-      # "python3 should have same version as hostpython3" で即失敗)、
-      # 両方を揃えて指定する必要があった。
-      - name: Pin target Python to 3.12 to avoid p4a issue #3274
-        run: sed -i 's/^requirements = python3,/requirements = python3==3.12,hostpython3==3.12,/' buildozer.spec
+      # requirementsのpython3を3.12系(このモジュールが存在しないバージョン)に
+      # 固定して回避する。p4aはビルドに使うhostpython3のバージョンがpython3と
+      # 完全一致している必要があり(違うと"python3 should have same version
+      # as hostpython3"で即失敗)、両方を揃えて指定する必要があった。
+      # さらに、p4aはこのバージョン文字列をそのままpython.orgのダウンロードURLに
+      # 使うため、"3.12"のようなメジャー.マイナーだけの指定だと存在しないURLに
+      # なり404で失敗する。実在するパッチバージョン(3.12.13、2026年3月リリース)
+      # まで指定する必要がある。
+      - name: Pin target Python to 3.12.13 to avoid p4a issue #3274
+        run: sed -i 's/^requirements = python3,/requirements = python3==3.12.13,hostpython3==3.12.13,/' buildozer.spec
 
       - name: Build with Buildozer
         uses: ./buildozer-action-patched
