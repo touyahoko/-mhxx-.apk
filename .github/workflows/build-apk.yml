@@ -57,13 +57,19 @@ jobs:
           EOF
           sed -i '1r /tmp/ensure_user.txt' buildozer-action-patched/Dockerfile
 
-      # ベースイメージがPython 3.14になり、entrypoint.py内の
-      # `pip install --user buildozer` がPEP 668の
-      # externally-managed-environmentで拒否される。
-      # PIP_BREAK_SYSTEM_PACKAGES=1 で --break-system-packages 相当を
-      # 常時有効にして回避する。
-      - name: Allow pip installs on externally-managed Python
-        run: sed -i '1a ENV PIP_BREAK_SYSTEM_PACKAGES=1' buildozer-action-patched/Dockerfile
+      # ベースイメージがPython 3.14/Ubuntu 26.04になり、pipまわりで2つ問題が出る。
+      # (1) entrypoint.py内の `pip install --user buildozer` がPEP 668の
+      #     externally-managed-environmentで拒否される。
+      # (2) python-for-androidの依存関係インストール時、aptで入っている
+      #     wheel/setuptools等をpipがアップグレードしようとして
+      #     "uninstall-no-record-file"(RECORDファイルが無く安全にuninstall
+      #     できない)で失敗する。
+      # PIP_BREAK_SYSTEM_PACKAGES と PIP_IGNORE_INSTALLED を常時有効にして
+      # 両方まとめて回避する(使い捨てのCIコンテナなので影響なし)。
+      - name: Work around pip/apt conflicts on the new base image
+        run: |
+          sed -i '1a ENV PIP_BREAK_SYSTEM_PACKAGES=1' buildozer-action-patched/Dockerfile
+          sed -i '1a ENV PIP_IGNORE_INSTALLED=1' buildozer-action-patched/Dockerfile
 
       - name: Build with Buildozer
         uses: ./buildozer-action-patched
