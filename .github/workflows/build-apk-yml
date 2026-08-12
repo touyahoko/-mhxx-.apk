@@ -1,0 +1,99 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch: {}
+
+jobs:
+  build-android:
+    name: Build for Android
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Android SDK/NDK の初回ダウンロードが数GB・数十分かかるため、
+      # .buildozer をキャッシュして2回目以降のビルドを高速化する。
+      - name: Cache Buildozer global directory
+        uses: actions/cache@v4
+        with:
+          path: ~/.buildozer
+          key: buildozer-global-${{ hashFiles('buildozer.spec') }}
+          restore-keys: |
+            buildozer-global-
+
+      - name: Cache Buildozer local directory
+        uses: actions/cache@v4
+        with:
+          path: .buildozer
+          key: buildozer-local-${{ hashFiles('buildozer.spec') }}
+          restore-keys: |
+            buildozer-local-
+
+      # ArtemSBulgakov/buildozer-action の Dockerfile は ppa:openjdk-r/ppa を
+      # 追加してJDK17を入れているが、ベースイメージがUbuntu 26.04 (resolute) に
+      # 切り替わった影響でこのPPAがまだresolute向けパッケージを公開しておらず
+      # apt update が404で失敗する。本家が直るまでの暫定パッチとして、
+      # アクションをローカルにチェックアウトしてPPA追加行だけ削除して使う。
+      - name: Checkout patched buildozer-action
+        uses: actions/checkout@v4
+        with:
+          repository: ArtemSBulgakov/buildozer-action
+          ref: v1
+          path: buildozer-action-patched
+
+      - name: Remove broken openjdk-r PPA line
+        run: sed -i '/add-apt-repository ppa:openjdk-r\/ppa/d' buildozer-action-patched/Dockerfile
+
+      # entrypoint.py が起動直後に `sudo chown -R user /github/workspace` を
+      # 実行するが、ベースイメージ側で "user" アカウントが正しく作られていない
+      # (buildozer-action issue #42 として既知・未解決) ため
+      # "chown: invalid user: 'user'" で毎回落ちる。存在しなければ作る形で回避する。
+      - name: Ensure buildozer 'user' account exists
+        run: |
+          cat > /tmp/ensure_user.txt << 'EOF'
+          RUN if ! id -u user >/dev/null 2>&1; then sudo useradd --create-home --shell /bin/bash user && sudo usermod --append --groups sudo user && echo "user ALL=(ALL) NOPASSWD: ALL" | sudo tee -a /etc/sudoers >/dev/null; fi
+          EOF
+          sed -i '1r /tmp/ensure_user.txt' buildozer-action-patched/Dockerfile
+
+      # ベースイメージがPython 3.14/Ubuntu 26.04になり、pipまわりで2つ問題が出る。
+      # (1) entrypoint.py内の `pip install --user buildozer` がPEP 668の
+      #     externally-managed-environmentで拒否される。
+      # (2) python-for-androidの依存関係インストール時、aptで入っている
+      #     wheel/setuptools等をpipがアップグレードしようとして
+      #     "uninstall-no-record-file"(RECORDファイルが無く安全にuninstall
+      #     できない)で失敗する。
+      # PIP_BREAK_SYSTEM_PACKAGES と PIP_IGNORE_INSTALLED を常時有効にして
+      # 両方まとめて回避する(使い捨てのCIコンテナなので影響なし)。
+      - name: Work around pip/apt conflicts on the new base image
+        run: |
+          sed -i '1a ENV PIP_BREAK_SYSTEM_PACKAGES=1' buildozer-action-patched/Dockerfile
+          sed -i '1a ENV PIP_IGNORE_INSTALLED=1' buildozer-action-patched/Dockerfile
+
+      # buildozer.spec の android.accept_sdk_license はデフォルトFalseで、
+      # 対話的にライセンスに同意できないCI環境ではSDK Build-Toolsの
+      # インストールがスキップされ aidl not found で失敗する。
+      # これはUbuntu 26.04移行とは無関係の、buildozerを非対話CIで
+      # 動かす際に元々必要な標準設定。buildozer.specを直接書き換えて対応。
+      - name: Auto-accept Android SDK licenses
+        run: |
+          if grep -q '^#\?android\.accept_sdk_license' buildozer.spec; then
+            sed -i 's/^#\?android\.accept_sdk_license.*/android.accept_sdk_license = True/' buildozer.spec
+          else
+            echo 'android.accept_sdk_license = True' >> buildozer.spec
+          fi
+
+      - name: Build with Buildozer
+        uses: ./buildozer-action-patched
+        id: buildozer
+        with:
+          workdir: .
+          buildozer_version: stable
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mhxx-rng-tool-apk
+          path: ${{ steps.buildozer.outputs.filename }}
+          retention-days: 30
