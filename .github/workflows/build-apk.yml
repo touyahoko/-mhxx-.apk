@@ -71,12 +71,31 @@ jobs:
           sed -i '1a ENV PIP_BREAK_SYSTEM_PACKAGES=1' buildozer-action-patched/Dockerfile
           sed -i '1a ENV PIP_IGNORE_INSTALLED=1' buildozer-action-patched/Dockerfile
 
+      # buildozer.spec の android.accept_sdk_license はデフォルトFalseで、
+      # 対話的にライセンスに同意できないCI環境ではSDK Build-Toolsの
+      # インストールがスキップされ aidl not found で失敗する。
+      # これはUbuntu 26.04移行とは無関係の、buildozerを非対話CIで
+      # 動かす際に元々必要な標準設定。buildozer.specを直接書き換えて対応。
+      - name: Auto-accept Android SDK licenses
+        run: |
+          if grep -q '^#\?android\.accept_sdk_license' buildozer.spec; then
+            sed -i 's/^#\?android\.accept_sdk_license.*/android.accept_sdk_license = True/' buildozer.spec
+          else
+            echo 'android.accept_sdk_license = True' >> buildozer.spec
+          fi
+
+      # ↑を設定してもまだ同じ箇所で止まる場合がある。python-for-android側の
+      # sdkmanager呼び出しがbuildozer.specのaccept_sdk_licenseを拾えていない
+      # 既知のバグ(kivy/python-for-android issue #3194)。
+      # コマンド自体に yes を繋いで、途中のどんなライセンス確認にも
+      # 強制的に「y」を答え続けることで確実に回避する。
       - name: Build with Buildozer
         uses: ./buildozer-action-patched
         id: buildozer
         with:
           workdir: .
           buildozer_version: stable
+          command: "yes | buildozer android debug"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
