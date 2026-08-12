@@ -96,12 +96,12 @@ jobs:
       # Android NDKのbionic libcでは未対応で、クロスコンパイルが
       # 失敗する既知バグ(kivy/python-for-android issue #3274)。
       # requirementsのpython3を3.12(このモジュールが存在しないバージョン)に
-      # 固定して回避を試みる。
-      # ただしこれは今までと違い、buildozer/p4a本体側のPythonバージョン
-      # 選択に関わる問題のため、この指定が確実に効くかはまだ検証できていない。
-      # 効かなければ、ローカルrecipeを上書きするもう一段階踏み込んだ対応が必要。
+      # 固定して回避する。ログで確認したところ、p4aはビルドに使うhostpython3の
+      # バージョンがpython3と完全一致している必要があり(違うと
+      # "python3 should have same version as hostpython3" で即失敗)、
+      # 両方を揃えて指定する必要があった。
       - name: Pin target Python to 3.12 to avoid p4a issue #3274
-        run: sed -i 's/^requirements = python3,/requirements = python3==3.12,/' buildozer.spec
+        run: sed -i 's/^requirements = python3,/requirements = python3==3.12,hostpython3==3.12,/' buildozer.spec
 
       - name: Build with Buildozer
         uses: ./buildozer-action-patched
