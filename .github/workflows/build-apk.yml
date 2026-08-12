@@ -89,6 +89,20 @@ jobs:
       # 既知のバグ(kivy/python-for-android issue #3194)。
       # コマンド自体に yes を繋いで、途中のどんなライセンス確認にも
       # 強制的に「y」を答え続けることで確実に回避する。
+
+      # 今回の "preadv"/"pwritev" undeclared エラーは上記とは別物で、
+      # ターゲットにビルドされるPython自体が3.14になったことが原因。
+      # Python 3.14で追加された remote_debugging モジュール(PEP 768)が
+      # Android NDKのbionic libcでは未対応で、クロスコンパイルが
+      # 失敗する既知バグ(kivy/python-for-android issue #3274)。
+      # requirementsのpython3を3.12(このモジュールが存在しないバージョン)に
+      # 固定して回避を試みる。
+      # ただしこれは今までと違い、buildozer/p4a本体側のPythonバージョン
+      # 選択に関わる問題のため、この指定が確実に効くかはまだ検証できていない。
+      # 効かなければ、ローカルrecipeを上書きするもう一段階踏み込んだ対応が必要。
+      - name: Pin target Python to 3.12 to avoid p4a issue #3274
+        run: sed -i 's/^requirements = python3,/requirements = python3==3.12,/' buildozer.spec
+
       - name: Build with Buildozer
         uses: ./buildozer-action-patched
         id: buildozer
