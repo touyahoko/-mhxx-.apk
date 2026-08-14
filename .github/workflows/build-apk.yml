@@ -110,6 +110,21 @@ jobs:
       - name: Pin target Python to latest 3.14.x patch (test fix for issue #139275)
         run: sed -i 's/^requirements = python3,/requirements = python3==3.14.7,hostpython3==3.14.7,/' buildozer.spec
 
+      # ログで確認: p4a同梱の patches/3.14_fix_remote_debug.patch は
+      # 正常に適用されており、remote_debugging問題(#139275)はこれで解決済み。
+      # 代わりに別のpatches/3.14_armv7l_fix.patch(32bit ARM向けsysconfig修正)が
+      # "Hunk FAILED"で失敗している。これはCPython 3.14.7側で同種の修正が
+      # 本家に既に取り込まれている(gh-145616, "Detect Android sysconfig ABI
+      # correctly on 32-bit ARM")ため、p4aの古いパッチが期待する差分と
+      # 一致しなくなったのが原因と考えられる。つまりこの1ファイルだけ
+      # 冗長になっている。p4aを自前でチェックアウトしこのパッチ1つだけ
+      # 無効化し、p4a.source_dir でそちらを使わせることで回避する。
+      - name: Neutralize now-redundant p4a armv7l/sysconfig patch
+        run: |
+          git clone --branch master --single-branch --depth 1 https://github.com/kivy/python-for-android.git p4a-patched
+          rm -f p4a-patched/pythonforandroid/recipes/python3/patches/3.14_armv7l_fix.patch
+          echo 'p4a.source_dir = p4a-patched' >> buildozer.spec
+
       - name: Build with Buildozer
         uses: ./buildozer-action-patched
         id: buildozer
