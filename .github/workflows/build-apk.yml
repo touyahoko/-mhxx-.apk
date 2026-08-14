@@ -119,10 +119,20 @@ jobs:
       # 一致しなくなったのが原因と考えられる。つまりこの1ファイルだけ
       # 冗長になっている。p4aを自前でチェックアウトしこのパッチ1つだけ
       # 無効化し、p4a.source_dir でそちらを使わせることで回避する。
+      #
+      # 1回目はp4a.source_dirを設定しても同じ場所で同じエラーが再発した。
+      # 原因は、rm -fでファイルを消してもgitにコミットしていなかったため、
+      # p4a.source_dirからの取り込み時(gitベースの処理と思われる)に
+      # 未コミットの削除が復元されてしまっていたこと。削除をコミットしてから
+      # 使わせるよう修正する。
       - name: Neutralize now-redundant p4a armv7l/sysconfig patch
         run: |
           git clone --branch master --single-branch --depth 1 https://github.com/kivy/python-for-android.git p4a-patched
           rm -f p4a-patched/pythonforandroid/recipes/python3/patches/3.14_armv7l_fix.patch
+          git -C p4a-patched config user.email "ci@example.com"
+          git -C p4a-patched config user.name "CI Patch"
+          git -C p4a-patched add -A
+          git -C p4a-patched commit -m "Remove redundant armv7l/sysconfig patch (fixed upstream in CPython 3.14.7)"
           echo 'p4a.source_dir = p4a-patched' >> buildozer.spec
 
       - name: Build with Buildozer
