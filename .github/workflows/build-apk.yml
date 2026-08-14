@@ -13,23 +13,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Android SDK/NDK の初回ダウンロードが数GB・数十分かかるため、
       # .buildozer をキャッシュして2回目以降のビルドを高速化する。
+      # キャッシュキーはbuildozer.specだけでなくこのワークフローファイル自体も
+      # 含める。以前はbuildozer.specだけで、後段のsedパッチ(pythonバージョン
+      # 指定など)を反映していなかったため、指定バージョンを変えても
+      # 同じキャッシュを使い回してしまっていた可能性がある。
       - name: Cache Buildozer global directory
         uses: actions/cache@v4
         with:
           path: ~/.buildozer
-          key: buildozer-global-${{ hashFiles('buildozer.spec') }}
-          restore-keys: |
-            buildozer-global-
+          key: buildozer-global-${{ hashFiles('buildozer.spec', '.github/workflows/build-apk.yml') }}
 
       - name: Cache Buildozer local directory
         uses: actions/cache@v4
         with:
           path: .buildozer
-          key: buildozer-local-${{ hashFiles('buildozer.spec') }}
-          restore-keys: |
-            buildozer-local-
+          key: buildozer-local-${{ hashFiles('buildozer.spec', '.github/workflows/build-apk.yml') }}
 
       # ArtemSBulgakov/buildozer-action の Dockerfile は ppa:openjdk-r/ppa を
       # 追加してJDK17を入れているが、ベースイメージがUbuntu 26.04 (resolute) に
@@ -95,16 +94,21 @@ jobs:
       # Python 3.14で追加された remote_debugging モジュール(PEP 768)が
       # Android NDKのbionic libcでは未対応で、クロスコンパイルが
       # 失敗する既知バグ(kivy/python-for-android issue #3274)。
-      # requirementsのpython3を3.12系(このモジュールが存在しないバージョン)に
-      # 固定して回避する。p4aはビルドに使うhostpython3のバージョンがpython3と
-      # 完全一致している必要があり(違うと"python3 should have same version
-      # as hostpython3"で即失敗)、両方を揃えて指定する必要があった。
-      # さらに、p4aはこのバージョン文字列をそのままpython.orgのダウンロードURLに
-      # 使うため、"3.12"のようなメジャー.マイナーだけの指定だと存在しないURLに
-      # なり404で失敗する。実在するパッチバージョン(3.12.13、2026年3月リリース)
-      # まで指定する必要がある。
-      - name: Pin target Python to 3.12.13 to avoid p4a issue #3274
-        run: sed -i 's/^requirements = python3,/requirements = python3==3.12.13,hostpython3==3.12.13,/' buildozer.spec
+      #
+      # 一度 python3==3.12.13 に下げて回避を試みたが、今度は別の関数
+      # (setgrent/getgrent/endgrent、grpモジュール)がAndroidに存在せず
+      # 同様のエラーで失敗した。これはCPython本体の既知バグで
+      # (python/cpython issue #114875)、3.12/3.14どちらにも存在しうる。
+      # p4aが公式にテスト・パッチしているのはデフォルトの3.14系と
+      # 考えられるため、独自に3.12へ下げたことでその他の既存パッチが
+      # 当たらなくなっていた可能性がある。
+      #
+      # そこで3.14系に戻しつつ、remote_debugging側の不具合
+      # (CPython issue #139275, preadv/pwritevが無い環境でコンパイル
+      # できない件)がその後のパッチリリースで直っている可能性に賭けて、
+      # 最新パッチ版(3.14.7、2026年8月5日リリース)を明示的に指定する。
+      - name: Pin target Python to latest 3.14.x patch (test fix for issue #139275)
+        run: sed -i 's/^requirements = python3,/requirements = python3==3.14.7,hostpython3==3.14.7,/' buildozer.spec
 
       - name: Build with Buildozer
         uses: ./buildozer-action-patched
