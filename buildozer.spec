@@ -29,6 +29,16 @@ android.allow_backup = True
 # Google ML Kit (オンデバイス日本語テキスト認識、無料・APIキー不要)。
 # ocr/android_ocr.py から pyjnius 経由で呼び出す。ML KitはAndroidXが
 # 前提のため enable_androidx も有効化する。
+#
+# ⚠️ ビルドエラーが出た場合、まずこの2行が原因かどうかを切り分ける
+# ためにコメントアウトしてみてください。コメントアウトしても
+# アプリ自体は問題なくビルド・動作します。「鑑定読取」タブのうち、
+# カメラ撮影からの自動OCRだけが使えなくなり、テキスト直接入力による
+# 判定機能はそのまま使えます。
+# (前回の "grpmodule.c" ビルドエラーはこの2行が原因ではなく、Gradle
+#  依存関係の解決よりずっと前段階の、CPython本体のコンパイル中に
+#  起きていたものでした。そちらは patches/android-config.site 側で
+#  対処したため、この2行は有効化した状態に戻しています)
 android.gradle_dependencies = com.google.mlkit:text-recognition-japanese:16.0.1
 android.enable_androidx = True
 
