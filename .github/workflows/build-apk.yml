@@ -13,39 +13,125 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Android SDK/NDK の初回ダウンロードが数GB・数十分かかるため、
       # .buildozer をキャッシュして2回目以降のビルドを高速化する。
-      # (patches/ の内容が変わったら、以前の失敗ビルドの中間生成物を
-      #  引きずらないようキャッシュキーも変える)
+      # キャッシュキーはbuildozer.specとこのワークフローファイル自体を含める。
+      # 後段のsedパッチ(pythonバージョン指定など)やCONFIG_SITEの内容を
+      # 変えたときに、古いキャッシュを引きずらないようにするため。
       - name: Cache Buildozer global directory
         uses: actions/cache@v4
         with:
           path: ~/.buildozer
-          key: buildozer-global-${{ hashFiles('buildozer.spec', 'patches/**') }}
-          restore-keys: |
-            buildozer-global-
+          key: buildozer-global-${{ hashFiles('buildozer.spec', '.github/workflows/build-apk.yml') }}
 
       - name: Cache Buildozer local directory
         uses: actions/cache@v4
         with:
           path: .buildozer
-          key: buildozer-local-${{ hashFiles('buildozer.spec', 'patches/**') }}
-          restore-keys: |
-            buildozer-local-
+          key: buildozer-local-${{ hashFiles('buildozer.spec', '.github/workflows/build-apk.yml') }}
+
+      # ArtemSBulgakov/buildozer-action の Dockerfile は ppa:openjdk-r/ppa を
+      # 追加してJDK17を入れているが、ベースイメージがUbuntu 26.04 (resolute) に
+      # 切り替わった影響でこのPPAがまだresolute向けパッケージを公開しておらず
+      # apt update が404で失敗する。本家が直るまでの暫定パッチとして、
+      # アクションをローカルにチェックアウトしてPPA追加行だけ削除して使う。
+      - name: Checkout patched buildozer-action
+        uses: actions/checkout@v4
+        with:
+          repository: ArtemSBulgakov/buildozer-action
+          ref: v1
+          path: buildozer-action-patched
+
+      - name: Remove broken openjdk-r PPA line
+        run: sed -i '/add-apt-repository ppa:openjdk-r\/ppa/d' buildozer-action-patched/Dockerfile
+
+      # entrypoint.py が起動直後に `sudo chown -R user /github/workspace` を
+      # 実行するが、ベースイメージ側で "user" アカウントが正しく作られていない
+      # (buildozer-action issue #42 として既知・未解決) ため
+      # "chown: invalid user: 'user'" で毎回落ちる。存在しなければ作る形で回避する。
+      - name: Ensure buildozer 'user' account exists
+        run: |
+          cat > /tmp/ensure_user.txt << 'EOF'
+          RUN if ! id -u user >/dev/null 2>&1; then sudo useradd --create-home --shell /bin/bash user && sudo usermod --append --groups sudo user && echo "user ALL=(ALL) NOPASSWD: ALL" | sudo tee -a /etc/sudoers >/dev/null; fi
+          EOF
+          sed -i '1r /tmp/ensure_user.txt' buildozer-action-patched/Dockerfile
+
+      # ベースイメージがPython 3.14/Ubuntu 26.04になり、pipまわりで2つ問題が出る。
+      # (1) entrypoint.py内の `pip install --user buildozer` がPEP 668の
+      #     externally-managed-environmentで拒否される。
+      # (2) python-for-androidの依存関係インストール時、aptで入っている
+      #     wheel/setuptools等をpipがアップグレードしようとして
+      #     "uninstall-no-record-file"で失敗する。
+      # PIP_BREAK_SYSTEM_PACKAGES と PIP_IGNORE_INSTALLED を常時有効にして
+      # 両方まとめて回避する(使い捨てのCIコンテナなので影響なし)。
+      - name: Work around pip/apt conflicts on the new base image
+        run: |
+          sed -i '1a ENV PIP_BREAK_SYSTEM_PACKAGES=1' buildozer-action-patched/Dockerfile
+          sed -i '1a ENV PIP_IGNORE_INSTALLED=1' buildozer-action-patched/Dockerfile
+
+      # buildozer.spec の android.accept_sdk_license はデフォルトFalseで、
+      # 対話的にライセンスに同意できないCI環境ではSDK Build-Toolsの
+      # インストールがスキップされ aidl not found で失敗する。
+      - name: Auto-accept Android SDK licenses
+        run: |
+          if grep -q '^#\?android\.accept_sdk_license' buildozer.spec; then
+            sed -i 's/^#\?android\.accept_sdk_license.*/android.accept_sdk_license = True/' buildozer.spec
+          else
+            echo 'android.accept_sdk_license = True' >> buildozer.spec
+          fi
+
+      # p4a側のsdkmanager呼び出しがbuildozer.specのaccept_sdk_licenseを
+      # 拾えていない既知バグ(kivy/python-for-android issue #3194)があるため、
+      # コマンド自体にyesを繋いで、途中のどんな確認にも強制的に
+      # 「y」を答え続けることでも二重に防御する(Build with Buildozerのcommand参照)。
+
+      # ビルド対象Pythonを3.14系の最新パッチ(3.14.7)に固定する。
+      # デフォルトのままだとPython 3.14で新規追加されたremote_debugging
+      # モジュール(PEP 768)がAndroidでコンパイルできず失敗するが
+      # (kivy/python-for-android issue #3274)、p4a同梱のpatches/3.14_fix_remote_debug.patch
+      # がこれを修正済みであることをログで確認している。
+      # hostpython3もpython3と完全に同じバージョンを指定する必要がある
+      # (異なると "python3 should have same version as hostpython3" で失敗)。
+      - name: Pin target Python to latest 3.14.x patch
+        run: sed -i 's/^requirements = python3,/requirements = python3==3.14.7,hostpython3==3.14.7,/' buildozer.spec
+
+      # p4a同梱のpatches/3.14_armv7l_fix.patch(32bit ARM向けsysconfig修正)は
+      # CPython 3.14.7側で同種の修正が本家に既に取り込まれている
+      # (gh-145616)ため冗長になっており、"Hunk FAILED"で適用に失敗する。
+      # p4aを自前でチェックアウトし、この1ファイルだけ削除してp4a.source_dirで
+      # 使わせる。削除はgitにコミットしておく(p4aのソース取り込みが
+      # gitベースの処理のため、コミットしないと復元されてしまう)。
+      - name: Neutralize now-redundant p4a armv7l/sysconfig patch
+        run: |
+          git clone --branch master --single-branch --depth 1 https://github.com/kivy/python-for-android.git p4a-patched
+          rm -f p4a-patched/pythonforandroid/recipes/python3/patches/3.14_armv7l_fix.patch
+          git -C p4a-patched config user.email "ci@example.com"
+          git -C p4a-patched config user.name "CI Patch"
+          git -C p4a-patched add -A
+          git -C p4a-patched commit -m "Remove redundant armv7l/sysconfig patch (fixed upstream in CPython 3.14.7)"
+          echo 'p4a.source_dir = p4a-patched' >> buildozer.spec
+
+      # 保険: grp モジュール (grpmodule.c) はAndroidに無い
+      # setgrent/getgrent/endgrent を無条件に使っておりコンパイルできない
+      # (CPython本体の既知バグ、python/cpython issue #114875)。
+      # 3.14系では今のところ再現していないが(3.12系で確認された不具合)、
+      # CONFIG_SITE(autoconfの標準機構)でCPythonのconfigureに
+      # 「getgrgidも無い」と嘘の判定をさせ、grpモジュール自体を
+      # ビルド対象から外すことで、もし3.14でも再現した場合に備える。
+      # python3以外のレシピのビルドには影響しない。
+      - name: Write CONFIG_SITE to preemptively skip the grp module
+        run: |
+          mkdir -p patches
+          echo 'ac_cv_func_getgrgid=no' > patches/android-config.site
 
       - name: Build with Buildozer
-        uses: ArtemSBulgakov/buildozer-action@v1
+        uses: ./buildozer-action-patched
         id: buildozer
         env:
-          # CPythonのconfigureに「getgrgidも無い」と判定させ、Androidの
-          # Bionic libcでは未対応の grp モジュール (grpmodule.c) の
-          # ビルドをスキップさせる。詳細は patches/android-config.site
-          # 参照。autoconfの標準機構 (CONFIG_SITE) なので、python3以外の
-          # レシピのビルドには影響しない。
-          CONFIG_SITE: ${{ github.workspace }}/patches/android-config.site
+          CONFIG_SITE: /github/workspace/patches/android-config.site
         with:
           workdir: .
           buildozer_version: stable
+          command: "yes | buildozer android debug"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
