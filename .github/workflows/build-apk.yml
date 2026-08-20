@@ -97,18 +97,34 @@ jobs:
       # p4a同梱のpatches/3.14_armv7l_fix.patch(32bit ARM向けsysconfig修正)は
       # CPython 3.14.7側で同種の修正が本家に既に取り込まれている
       # (gh-145616)ため冗長になっており、"Hunk FAILED"で適用に失敗する。
-      # p4aを自前でチェックアウトし、この1ファイルだけ削除してp4a.source_dirで
-      # 使わせる。削除はgitにコミットしておく(p4aのソース取り込みが
-      # gitベースの処理のため、コミットしないと復元されてしまう)。
-      - name: Neutralize now-redundant p4a armv7l/sysconfig patch
+      #
+      # p4a.source_dir で自前のpatch済みチェックアウトを使わせる方法を
+      # 3回試したが、ログで確認する限り一度も効いておらず、常にp4aが
+      # 自分でcloneした .buildozer/android/platform/python-for-android の
+      # 方が使われ続けていた。この設定はこの環境では機能しないと判断し、
+      # 別の方法に切り替える。
+      #
+      # 実際にログで確認した通りの呼び出し
+      # (RAN: /usr/bin/patch -t -d ... -i .../3.14_armv7l_fix.patch)を
+      # そのまま狙い撃ちする。/usr/bin より先に見つかる場所に偽の patch
+      # コマンドを置き、対象がこの1ファイルの時だけ何もせず成功扱いにし、
+      # それ以外は本物の /usr/bin/patch にそのまま渡す。
+      - name: Shim out the redundant armv7l patch
         run: |
-          git clone --branch master --single-branch --depth 1 https://github.com/kivy/python-for-android.git p4a-patched
-          rm -f p4a-patched/pythonforandroid/recipes/python3/patches/3.14_armv7l_fix.patch
-          git -C p4a-patched config user.email "ci@example.com"
-          git -C p4a-patched config user.name "CI Patch"
-          git -C p4a-patched add -A
-          git -C p4a-patched commit -m "Remove redundant armv7l/sysconfig patch (fixed upstream in CPython 3.14.7)"
-          echo 'p4a.source_dir = p4a-patched' >> buildozer.spec
+          mkdir -p patch-shim
+          cat > patch-shim/patch << 'EOF'
+          #!/bin/sh
+          for a in "$@"; do
+            case "$a" in
+              *3.14_armv7l_fix.patch*)
+                echo "[shim] Skipping redundant armv7l/sysconfig patch (already fixed upstream in this CPython version)"
+                exit 0
+                ;;
+            esac
+          done
+          exec /usr/bin/patch "$@"
+          EOF
+          chmod +x patch-shim/patch
 
       # 保険: grp モジュール (grpmodule.c) はAndroidに無い
       # setgrent/getgrent/endgrent を無条件に使っておりコンパイルできない
@@ -131,7 +147,7 @@ jobs:
         with:
           workdir: .
           buildozer_version: stable
-          command: "yes | buildozer android debug"
+          command: "export PATH=/github/workspace/patch-shim:$PATH; yes | buildozer android debug"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
