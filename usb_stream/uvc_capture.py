@@ -141,6 +141,10 @@ class UVCCapture:
     CAPTURE_WIDTH = 1280
     CAPTURE_HEIGHT = 720
 
+    def is_available(self) -> bool:
+        """Android Camera2 が使える環境かどうか (screen から呼べるインスタンスメソッド版)。"""
+        return _ANDROID
+
     def __init__(self):
         self._running = False
         self._latest_frame: Optional[bytes] = None
