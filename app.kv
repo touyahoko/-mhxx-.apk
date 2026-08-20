@@ -1,9 +1,11 @@
 #:kivy 2.3.1
-#:import SearchScreen screens.search_screen.SearchScreen
-#:import AroundScreen screens.around_screen.AroundScreen
-#:import ComboScreen screens.combo_screen.ComboScreen
+#:import SearchScreen   screens.search_screen.SearchScreen
+#:import AroundScreen   screens.around_screen.AroundScreen
+#:import ComboScreen    screens.combo_screen.ComboScreen
 #:import AimPointScreen screens.aimpoint_screen.AimPointScreen
-#:import OcrScreen screens.ocr_screen.OcrScreen
+#:import OcrScreen      screens.ocr_screen.OcrScreen
+#:import StreamScreen   screens.stream_screen.StreamScreen
+#:import AutoLoopScreen screens.autoloop_screen.AutoLoopScreen
 
 <RootLayout>:
     orientation: 'vertical'
@@ -87,40 +89,53 @@
                 font_size: '11sp'
                 on_release: app.set_fps(60)
 
+    # タブ数: 7 → tab_width を /7 に変更
     TabbedPanel:
         id: tabs
         do_default_tab: False
-        tab_width: (self.width / 5) if self.width else 90
+        tab_width: (self.width / 7) if self.width else 76
         tab_height: '44dp'
 
         TabbedPanelItem:
             id: search_tab_item
             text: '検索'
-            font_size: '12sp'
+            font_size: '11sp'
             SearchScreen:
                 id: search_screen
 
         TabbedPanelItem:
             id: around_tab_item
             text: '周辺'
-            font_size: '12sp'
+            font_size: '11sp'
             AroundScreen:
                 id: around_screen
 
         TabbedPanelItem:
             text: '調合'
-            font_size: '12sp'
+            font_size: '11sp'
             ComboScreen:
                 id: combo_screen
 
         TabbedPanelItem:
             text: '狙い目'
-            font_size: '12sp'
+            font_size: '11sp'
             AimPointScreen:
                 id: aimpoint_screen
 
         TabbedPanelItem:
             text: '読取'
-            font_size: '12sp'
+            font_size: '11sp'
             OcrScreen:
                 id: ocr_screen
+
+        TabbedPanelItem:
+            text: '配信'
+            font_size: '11sp'
+            StreamScreen:
+                id: stream_screen
+
+        TabbedPanelItem:
+            text: '自動'
+            font_size: '11sp'
+            AutoLoopScreen:
+                id: autoloop_screen

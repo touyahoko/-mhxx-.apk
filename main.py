@@ -2,7 +2,10 @@
 
 mhxx_rng.py (デスクトップ版 nx_macro_tool から一切変更せずに移植した
 RNGエンジン) を、タッチ操作向けのKivy UIから呼び出すだけのアプリ。
-自動操作・コントローラー通信などの機能は含まない。
+
+追加機能:
+  - USBキャプチャーボード経由の Switch 画面ストリーミング
+  - Arduino Leonardo + 画像認識 によるお守り自動ループ
 """
 from __future__ import annotations
 
@@ -19,16 +22,11 @@ FONT_DIR = os.path.join(BASE_DIR, "assets", "fonts")
 
 # ---------------------------------------------------------------------------
 # 日本語フォント登録
-#
-# Kivy標準の "Roboto" は日本語グリフを含まないため、"Roboto" という名前を
-# 同梱の Noto Sans JP で上書き登録する。こうすることで、font_name を個別に
-# 指定していない標準ウィジェット (Label/Button/TextInput/Spinner等) も
-# 含めてアプリ全体が自動的に日本語表示に対応する。
 # ---------------------------------------------------------------------------
 _REGULAR = os.path.join(FONT_DIR, "NotoSansJP-Regular.otf")
-_BOLD = os.path.join(FONT_DIR, "NotoSansJP-Bold.otf")
+_BOLD    = os.path.join(FONT_DIR, "NotoSansJP-Bold.otf")
 
-LabelBase.register(name="Roboto", fn_regular=_REGULAR, fn_bold=_BOLD)
+LabelBase.register(name="Roboto",    fn_regular=_REGULAR, fn_bold=_BOLD)
 LabelBase.register(name="NotoSansJP", fn_regular=_REGULAR, fn_bold=_BOLD)
 
 
@@ -41,13 +39,26 @@ class RootLayout(BoxLayout):
 
 
 class MhxxRngApp(App):
-    """アプリ全体で共有する状態 (お守り種類 / フレームレート表示) を持つ。"""
+    """
+    アプリ全体で共有する状態とデバイスインスタンスを持つ。
 
-    kind = NumericProperty(0)  # 0=風化 1=古び 2=光る 3=なぞの
-    fps = NumericProperty(30)  # 経過時間表示換算用 (30=オリジナル / 60=Switch2)
+    app.uvc     : UVCCapture     — USB キャプチャーボード映像取得
+    app.arduino : ArduinoCtrl   — Arduino Leonardo シリアル通信
+    """
+
+    kind = NumericProperty(0)   # 0=風化 1=古び 2=光る 3=なぞの
+    fps  = NumericProperty(30)  # 経過時間表示換算用 (30=オリジナル / 60=Switch2)
 
     def build(self):
         self.title = "MHXX RNG Tool"
+
+        # ---- デバイスドライバー (Android 実機のみ動作。それ以外は is_available()=False)
+        from usb_stream.uvc_capture import UVCCapture
+        from arduino.serial_ctrl import ArduinoCtrl
+        self.uvc     = UVCCapture()
+        self.arduino = ArduinoCtrl()
+
+        # ---- KV ファイル読み込み
         for kv_name in (
             "common.kv",
             "search_screen.kv",
@@ -55,10 +66,19 @@ class MhxxRngApp(App):
             "combo_screen.kv",
             "aimpoint_screen.kv",
             "ocr_screen.kv",
+            "stream_screen.kv",     # 追加: USBキャプチャー配信タブ
+            "autoloop_screen.kv",   # 追加: お守り自動ループタブ
         ):
             Builder.load_file(os.path.join(BASE_DIR, "screens", kv_name))
         Builder.load_file(os.path.join(BASE_DIR, "app.kv"))
         return RootLayout()
+
+    def on_stop(self):
+        """アプリ終了時にデバイス接続を安全に閉じる。"""
+        if hasattr(self, "uvc"):
+            self.uvc.stop()
+        if hasattr(self, "arduino"):
+            self.arduino.disconnect()
 
     def set_kind(self, kind: int) -> None:
         if self.kind != kind:

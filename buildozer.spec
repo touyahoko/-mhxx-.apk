@@ -8,7 +8,7 @@ source.dir = .
 source.include_exts = py,kv,otf,ttf,txt,png,jpg
 source.exclude_dirs = tests, bin, .buildozer, .github, .git
 
-version = 1.0.0
+version = 1.1.0
 
 requirements = python3,kivy==2.3.1,plyer
 
@@ -17,34 +17,34 @@ fullscreen = 0
 
 icon.filename = %(source.dir)s/assets/icons/icon.png
 
-# Android固有設定
-# CAMERA: 鑑定結果の撮影用。READ_MEDIA_IMAGES/READ_EXTERNAL_STORAGE:
-# ギャラリーからの画像選択用 (Android 13+ / 12以下の両方をカバー)。
-android.permissions = CAMERA,READ_MEDIA_IMAGES,READ_EXTERNAL_STORAGE
+# ---------------------------------------------------------------------------
+# Android 権限
+#
+#   CAMERA            : USBキャプチャーボード (外部カメラ) / OCR 撮影
+#   USB_HOST          : Arduino Leonardo + UVC キャプチャー USB 通信
+#   READ_MEDIA_IMAGES : ギャラリーから画像選択 (Android 13+)
+#   READ_EXTERNAL_STORAGE : ギャラリーから画像選択 (Android 12 以下)
+#   VIBRATE           : 目標お守り発見時の通知バイブ
+# ---------------------------------------------------------------------------
+android.permissions = CAMERA,USB_HOST,READ_MEDIA_IMAGES,READ_EXTERNAL_STORAGE,VIBRATE
 android.api = 34
-android.minapi = 23
+android.minapi = 28
+# Android 9 (API 28) 以降: Camera2 外部カメラ (UVC キャプチャーボード) サポート
 android.archs = arm64-v8a,armeabi-v7a
 android.allow_backup = True
 
-# Google ML Kit (オンデバイス日本語テキスト認識、無料・APIキー不要)。
-# ocr/android_ocr.py から pyjnius 経由で呼び出す。ML KitはAndroidXが
-# 前提のため enable_androidx も有効化する。
+# ---------------------------------------------------------------------------
+# Gradle 依存関係
 #
-# ⚠️ ビルドエラーが出た場合、まずこの2行が原因かどうかを切り分ける
-# ためにコメントアウトしてみてください。コメントアウトしても
-# アプリ自体は問題なくビルド・動作します。「鑑定読取」タブのうち、
-# カメラ撮影からの自動OCRだけが使えなくなり、テキスト直接入力による
-# 判定機能はそのまま使えます。
-# (前回の "grpmodule.c" ビルドエラーはこの2行が原因ではなく、Gradle
-#  依存関係の解決よりずっと前段階の、CPython本体のコンパイル中に
-#  起きていたものでした。そちらは patches/android-config.site 側で
-#  対処したため、この2行は有効化した状態に戻しています)
+#   text-recognition-japanese : ML Kit 日本語 OCR (既存機能)
+#   カメラ / USB は Android OS 標準 API のため Gradle 追加不要
+# ---------------------------------------------------------------------------
 android.gradle_dependencies = com.google.mlkit:text-recognition-japanese:16.0.1
 android.enable_androidx = True
 
-# 個人利用目的のツールのため、Google Playへの公開は想定していません。
-# (公開する場合は package.domain を実際に所有するドメインの逆順に、
-#  version / versionCode の運用ルールを別途整備してください)
+# USB デバイスフィルター (USB OTG 接続時にアプリを自動起動する設定)
+# android.meta_data = android.hardware.usb.action.USB_DEVICE_ATTACHED:@xml/device_filter
+# ※ 自動起動不要ならコメントアウトのままで OK
 
 [buildozer]
 log_level = 2
