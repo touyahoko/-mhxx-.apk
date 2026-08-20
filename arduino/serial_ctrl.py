@@ -44,6 +44,10 @@ class ArduinoCtrl:
     受信データは on_message コールバックで 1 行単位に通知される。
     """
 
+    def is_available(self) -> bool:
+        """Android USB Host API が利用可能かどうか (screen から呼べるインスタンスメソッド版)。"""
+        return _ANDROID
+
     def __init__(self):
         self._conn = None          # UsbDeviceConnection
         self._ep_in = None         # bulk-in endpoint
