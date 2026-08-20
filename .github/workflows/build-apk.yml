@@ -109,11 +109,40 @@ jobs:
       # そのまま狙い撃ちする。/usr/bin より先に見つかる場所に偽の patch
       # コマンドを置き、対象がこの1ファイルの時だけ何もせず成功扱いにし、
       # それ以外は本物の /usr/bin/patch にそのまま渡す。
-      - name: Shim out the redundant armv7l patch
+      #
+      # 併せて、このシムに相乗りして Modules/Setup.local に
+      # "*disabled*" 指定を書き込み、_remote_debugging モジュールを
+      # 丸ごとビルド対象から外す。preadv/pwritev/process_vm_readv を
+      # 個別にconfigureで「無い」と偽う方法も試したが、CPython内部の
+      # 条件分岐が中途半端に食い違い、別の未定義シンボル
+      # (search_linux_map_for_section)が新たに出てしまった
+      # (CPython側でも同じ症状の報告あり、issue #139275のコメント参照)。
+      # モジュールごと外す方が安全。patchは-dで対象ディレクトリを
+      # 受け取るため、そこから抽出してSetup.localに書き込む
+      # (hostpython3・python3どちらのビルドにも同じ仕組みで対応できる)。
+      - name: "Shim patch: skip redundant armv7l fix, disable _remote_debugging"
         run: |
           mkdir -p patch-shim
           cat > patch-shim/patch << 'EOF'
           #!/bin/sh
+          build_dir=""
+          prev=""
+          for a in "$@"; do
+            if [ "$prev" = "-d" ]; then
+              build_dir="$a"
+            fi
+            prev="$a"
+          done
+          if [ -n "$build_dir" ] && [ -d "$build_dir/Modules" ]; then
+            setup_local="$build_dir/Modules/Setup.local"
+            if ! grep -q '^\*disabled\*' "$setup_local" 2>/dev/null; then
+              {
+                echo '*disabled*'
+                echo '_remote_debugging'
+                echo 'grp'
+              } >> "$setup_local"
+            fi
+          fi
           for a in "$@"; do
             case "$a" in
               *3.14_armv7l_fix.patch*)
@@ -126,25 +155,16 @@ jobs:
           EOF
           chmod +x patch-shim/patch
 
-      # 保険として入れていたCONFIG_SITEの仕組みを、preadv/pwritev対策にも使う。
-      # p4a同梱のpatches/3.14_fix_remote_debug.patchは適用は成功する(exit 0)
-      # ものの、500行以上のオフセット(fuzzで無理やり)当たっているだけで、
-      # 実際の3.14.7のソースに対しては不十分だったらしく、
-      # コンパイル自体はundeclared function 'preadv'/'pwritev'で失敗していた。
-      # remote_debuggingモジュールはprocess_vm_readv/preadv+pwritevが
-      # 無い場合はコンパイル自体をスキップする作り(ちゃんとHAVE_*マクロで
-      # ガードされている)と考えられるため、configureに「これらの関数は
-      # 存在しない」と伝えれば、モジュールごとビルド対象から外れるはず。
-      # (grpモジュールと違い、こちらは元々きちんとガードされている前提)
-      - name: Write CONFIG_SITE to preemptively skip grp and remote_debugging
+      # 保険: grp モジュール (grpmodule.c) はAndroidに無い
+      # setgrent/getgrent/endgrent を無条件に使っておりコンパイルできない
+      # (CPython本体の既知バグ、python/cpython issue #114875)。
+      # CONFIG_SITE(autoconfの標準機構)でCPythonのconfigureに
+      # 「getgrgidも無い」と嘘の判定をさせ、grpモジュール自体を
+      # ビルド対象から外すことで、もし3.14でも再現した場合に備える。
+      - name: Write CONFIG_SITE to preemptively skip the grp module
         run: |
           mkdir -p patches
-          cat > patches/android-config.site << 'EOF'
-          ac_cv_func_getgrgid=no
-          ac_cv_func_preadv=no
-          ac_cv_func_pwritev=no
-          ac_cv_func_process_vm_readv=no
-          EOF
+          echo 'ac_cv_func_getgrgid=no' > patches/android-config.site
 
       - name: Build with Buildozer
         uses: ./buildozer-action-patched
