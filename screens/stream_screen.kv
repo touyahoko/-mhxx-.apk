@@ -1,0 +1,80 @@
+#:kivy 2.3.1
+
+<StreamScreen>:
+    do_scroll_x: False
+
+    BoxLayout:
+        id: content
+        orientation: 'vertical'
+        size_hint_y: None
+        height: self.minimum_height
+        padding: '10dp'
+        spacing: '6dp'
+
+        SectionLabel:
+            text: '📡 USBキャプチャー映像'
+
+        HintLabel:
+            text: 'UVC キャプチャーボードを USB OTG で接続し「開始」を押してください。Switch 画面がリアルタイムで表示されます。自動ループ中もこの映像がOCR入力に使われます。'
+
+        Label:
+            id: status_label
+            text: ''
+            font_size: '12sp'
+            size_hint_y: None
+            height: self.texture_size[1] + 8 if self.text else 0
+            halign: 'left'
+            valign: 'top'
+            text_size: self.width, None
+            color: 0.55, 0.78, 1, 1
+
+        PrimaryButton:
+            id: start_btn
+            text: 'ストリーミング開始'
+            on_release: root._toggle_stream()
+
+        # --- 映像表示エリア -------------------------------------------
+        Widget:
+            size_hint_y: None
+            height: '4dp'
+
+        Label:
+            text: 'Switch 画面'
+            font_size: '11sp'
+            size_hint_y: None
+            height: '18dp'
+            halign: 'left'
+            text_size: self.width, None
+            color: 0.5, 0.5, 0.55, 1
+
+        # 黒背景 + 映像テクスチャ
+        BoxLayout:
+            size_hint_y: None
+            height: '280dp'
+            canvas.before:
+                Color:
+                    rgba: 0.06, 0.06, 0.08, 1
+                RoundedRectangle:
+                    pos: self.pos
+                    size: self.size
+                    radius: [6, 6, 6, 6]
+
+            Image:
+                id: stream_view
+                allow_stretch: True
+                keep_ratio: True
+
+        # --- 接続ガイド -----------------------------------------------
+        Widget:
+            size_hint_y: None
+            height: '8dp'
+
+        SectionLabel:
+            text: '接続方法'
+
+        HintLabel:
+            text: '① スマホ USB-C → USB OTG ハブ\n② USB OTG ハブ → UVC キャプチャーボード (USB-A)\n③ キャプチャーボード → Switch (HDMI)\n④ アプリに「カメラ」権限を許可\n\n※ Android 9 (API 28) 以降が必要です\n※ キャプチャーボードによっては認識まで数秒かかります'
+
+        Widget:
+            size_hint_y: None
+            height: '16dp'

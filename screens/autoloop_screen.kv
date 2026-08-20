@@ -1,0 +1,157 @@
+#:kivy 2.3.1
+
+<AutoLoopScreen>:
+    do_scroll_x: False
+
+    BoxLayout:
+        id: content
+        orientation: 'vertical'
+        size_hint_y: None
+        height: self.minimum_height
+        padding: '10dp'
+        spacing: '6dp'
+
+        # ---- Arduino 接続 -----------------------------------------------
+        SectionLabel:
+            text: '🎮 Arduino Leonardo'
+
+        HintLabel:
+            text: 'USB OTG でArduino Leonardo を接続してください。Arduinoが Switchのコントローラーとして動作し、ボタンシーケンスを実行します。'
+
+        Label:
+            id: arduino_status
+            text: '未接続'
+            font_size: '13sp'
+            size_hint_y: None
+            height: self.texture_size[1] + 8
+            halign: 'left'
+            valign: 'top'
+            text_size: self.width, None
+            color: 0.7, 0.85, 0.7, 1
+
+        PrimaryButton:
+            id: arduino_btn
+            text: 'Arduino に接続'
+            on_release: root._toggle_arduino()
+
+        # ---- 目標お守り -------------------------------------------------
+        Widget:
+            size_hint_y: None
+            height: '4dp'
+
+        SectionLabel:
+            text: '🎯 目標のお守り'
+
+        HintLabel:
+            text: '「検索」タブでスキル・スロット条件を設定してから「読み込む」を押してください。'
+
+        Label:
+            id: target_label
+            text: '未設定 — 検索タブから読み込んでください'
+            font_size: '13sp'
+            size_hint_y: None
+            height: self.texture_size[1] + 8
+            halign: 'left'
+            valign: 'top'
+            text_size: self.width, None
+            color: 1, 0.85, 0.5, 1
+
+        PrimaryButton:
+            text: '検索タブから目標を読み込む'
+            on_release: root._load_target()
+
+        # ---- ループ設定 -------------------------------------------------
+        Widget:
+            size_hint_y: None
+            height: '4dp'
+
+        SectionLabel:
+            text: '⚙️ ループ設定'
+
+        BoxLayout:
+            size_hint_y: None
+            height: '44dp'
+            spacing: '8dp'
+
+            FieldLabel:
+                text: '待機時間'
+                size_hint_x: 0.45
+
+            Spinner:
+                id: wait_spinner
+                text: '5秒'
+                values: ['2秒', '3秒', '4秒', '5秒', '6秒', '8秒', '10秒', '12秒', '15秒', '20秒']
+                font_size: '14sp'
+                size_hint_x: 0.55
+
+        HintLabel:
+            text: 'Arduinoがボタンシーケンスを実行してからお守り画面が表示されるまでの待機時間です。Arduino から "READY" シグナルが届いた場合は待機時間より早く認識が始まります。'
+
+        # ---- 実行 -------------------------------------------------------
+        Widget:
+            size_hint_y: None
+            height: '4dp'
+
+        SectionLabel:
+            text: '🔁 自動ループ'
+
+        PrimaryButton:
+            id: start_btn
+            text: 'ループ開始'
+            on_release: root._toggle_loop()
+
+        # ---- 認識結果 ---------------------------------------------------
+        Widget:
+            size_hint_y: None
+            height: '2dp'
+
+        FieldLabel:
+            text: '現在の認識結果'
+
+        Label:
+            id: current_charm_label
+            text: '---'
+            font_size: '13sp'
+            size_hint_y: None
+            height: self.texture_size[1] + 12
+            halign: 'left'
+            valign: 'top'
+            text_size: self.width, None
+            color: 0.9, 0.9, 0.93, 1
+
+        Label:
+            id: loop_count_label
+            text: '試行回数: 0'
+            font_size: '13sp'
+            bold: True
+            size_hint_y: None
+            height: '22dp'
+            halign: 'left'
+            text_size: self.width, None
+            color: 0.65, 0.9, 1, 1
+
+        Label:
+            id: loop_status
+            text: '待機中 — 「ループ開始」を押してください'
+            font_size: '12sp'
+            size_hint_y: None
+            height: self.texture_size[1] + 12
+            halign: 'left'
+            valign: 'top'
+            text_size: self.width, None
+            color: 0.55, 0.78, 1, 1
+
+        # ---- 使い方ガイド -----------------------------------------------
+        Widget:
+            size_hint_y: None
+            height: '8dp'
+
+        SectionLabel:
+            text: '使い方'
+
+        HintLabel:
+            text: '① 「配信」タブでUSBキャプチャーを開始\n② 本タブで Arduino Leonardo を接続\n③ Switch をお守り確認画面の直前で待機\n④ 「検索」タブで目標を設定し「読み込む」\n⑤ 「ループ開始」→ Arduino が自動でボタン操作\n⑥ 目標のお守りが出たら自動停止・バイブ通知\n   → すぐにゲームを保存してください！\n\n⚠️ Arduino のスケッチはREADME の「ARDUINO_SKETCH.md」を参照'
+
+        Widget:
+            size_hint_y: None
+            height: '16dp'
