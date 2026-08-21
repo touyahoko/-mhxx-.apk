@@ -112,3 +112,52 @@ def recognize_text(
         task.addOnFailureListener(_OnFailureListener(_handle_failure))
     except Exception as exc:  # noqa: BLE001
         on_error(f"OCR初期化エラー: {exc}")
+
+
+def recognize_from_bytes(jpeg_bytes: bytes, timeout: float = 10.0) -> str:
+    """
+    JPEG バイト列から日本語テキストを認識する (同期API)。
+
+    バックグラウンドスレッドから呼ぶ用途向け。
+    内部で一時ファイルに書き出してから recognize_text() を呼ぶ。
+
+    Args:
+        jpeg_bytes: JPEG 画像データ
+        timeout   : 最大待機秒数
+
+    Returns:
+        認識テキスト。失敗時は "[エラー] ..." 形式の文字列。
+    """
+    import threading
+    import tempfile
+    import os
+
+    result: list[str] = []
+    ev = threading.Event()
+
+    def _ok(text: str) -> None:
+        result.append(text)
+        ev.set()
+
+    def _err(msg: str) -> None:
+        result.append(f"[エラー] {msg}")
+        ev.set()
+
+    # 一時ファイルに JPEG を書き出す
+    try:
+        fd, path = tempfile.mkstemp(suffix=".jpg")
+        with os.fdopen(fd, "wb") as f:
+            f.write(jpeg_bytes)
+    except Exception as exc:
+        return f"[エラー] 一時ファイル作成失敗: {exc}"
+
+    try:
+        recognize_text(path, _ok, _err)
+        ev.wait(timeout)
+    finally:
+        try:
+            os.remove(path)
+        except Exception:
+            pass
+
+    return result[0] if result else "[エラー] タイムアウト"
