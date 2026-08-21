@@ -166,25 +166,6 @@ jobs:
           mkdir -p patches
           echo 'ac_cv_func_getgrgid=no' > patches/android-config.site
 
-
-      # キャッシュから復元した python-for-android の git remote が失われる既知の問題。
-      # buildozer が `git config --get remote.origin.url` を呼んで
-      # "Error code: 1" で落ちる場合、remote が無いだけなので補完して回避する。
-      # ディレクトリが無い(初回ビルド)ときは何もしない。
-      - name: Fix p4a git remote if missing after cache restore
-        run: |
-          P4A_DIR=".buildozer/android/platform/python-for-android"
-          if [ -d "$P4A_DIR" ]; then
-            if ! git -C "$P4A_DIR" config --get remote.origin.url >/dev/null 2>&1; then
-              echo "[fix] git remote が見つかりません。origin を追加します。"
-              git -C "$P4A_DIR" remote add origin https://github.com/kivy/python-for-android.git
-            else
-              echo "[ok] git remote は正常です: $(git -C "$P4A_DIR" config --get remote.origin.url)"
-            fi
-          else
-            echo "[skip] p4a ディレクトリが無いため初回クローンに任せます。"
-          fi
-
       - name: Build with Buildozer
         uses: ./buildozer-action-patched
         id: buildozer
