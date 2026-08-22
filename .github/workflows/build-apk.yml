@@ -13,10 +13,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # .buildozer をキャッシュして 2 回目以降のビルドを高速化する。
-      # キャッシュキーは buildozer.spec とこのワークフローファイルを含める。
-      # 後段の sed パッチや CONFIG_SITE の内容を変えたとき古いキャッシュを
-      # 引きずらないようにするため。
       - name: Cache Buildozer global directory
         uses: actions/cache@v4
         with:
@@ -30,10 +26,8 @@ jobs:
           key: buildozer-local-${{ hashFiles('buildozer.spec', '.github/workflows/build-apk.yml') }}
 
       # ArtemSBulgakov/buildozer-action の Dockerfile は ppa:openjdk-r/ppa を
-      # 追加して JDK17 を入れているが、ベースイメージが Ubuntu 26.04 (resolute) に
-      # 切り替わった影響でこの PPA がまだ resolute 向けパッケージを公開しておらず
-      # apt update が 404 で失敗する。本家が直るまでの暫定パッチとして
-      # アクションをローカルにチェックアウトして PPA 追加行だけ削除して使う。
+      # 追加して JDK17 を入れているが、Ubuntu 26.04 (resolute) ではこの PPA が
+      # まだ resolute 向けパッケージを公開しておらず apt update が 404 で失敗する。
       - name: Checkout patched buildozer-action
         uses: actions/checkout@v4
         with:
@@ -44,10 +38,8 @@ jobs:
       - name: Remove broken openjdk-r PPA line
         run: sed -i '/add-apt-repository ppa:openjdk-r\/ppa/d' buildozer-action-patched/Dockerfile
 
-      # entrypoint.py が起動直後に `sudo chown -R user /github/workspace` を
-      # 実行するが、ベースイメージ側で "user" アカウントが正しく作られていない
-      # (buildozer-action issue #42) ため "chown: invalid user: 'user'" で落ちる。
-      # 存在しなければ作る形で回避する。
+      # ベースイメージで "user" アカウントが存在しないと chown で落ちる
+      # (buildozer-action issue #42)
       - name: Ensure buildozer 'user' account exists
         run: |
           cat > /tmp/ensure_user.txt << 'EOF'
@@ -55,16 +47,12 @@ jobs:
           EOF
           sed -i '1r /tmp/ensure_user.txt' buildozer-action-patched/Dockerfile
 
-      # Python 3.14 / Ubuntu 26.04 に切り替わった後の pip 問題を回避する。
-      # (1) pip install --user が PEP 668 で拒否される
-      # (2) apt 管理パッケージを pip がアップグレードしようとして失敗する
+      # Python 3.14 / Ubuntu 26.04 での pip 問題回避
       - name: Work around pip/apt conflicts on the new base image
         run: |
           sed -i '1a ENV PIP_BREAK_SYSTEM_PACKAGES=1' buildozer-action-patched/Dockerfile
           sed -i '1a ENV PIP_IGNORE_INSTALLED=1' buildozer-action-patched/Dockerfile
 
-      # buildozer.spec の android.accept_sdk_license はデフォルト False のため
-      # CI 環境で SDK Build-Tools のインストールがスキップされ aidl not found で失敗する。
       - name: Auto-accept Android SDK licenses
         run: |
           if grep -q '^#\?android\.accept_sdk_license' buildozer.spec; then
@@ -73,45 +61,41 @@ jobs:
             echo 'android.accept_sdk_license = True' >> buildozer.spec
           fi
 
-      # Python を 3.14.7 に固定する。
-      # hostpython3 も同じバージョンを指定しないと
-      # "python3 should have same version as hostpython3" で失敗する。
+      # Python 3.14.7 に固定。hostpython3 も同じバージョンが必要
       - name: Pin target Python to 3.14.7
         run: sed -i 's/^requirements = python3,/requirements = python3==3.14.7,hostpython3==3.14.7,/' buildozer.spec
 
-      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-      # patch シム: armv7l パッチスキップ + remote_debugging コア除外
-      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      # patch シム — 3 つの役割を持つ
+      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
       #
-      # 【今回修正した問題】
-      #   Python/remote_debugging.c のビルドエラー:
-      #     51 | written = pwritev(handle->memfd, local, 1, offset);
-      #     2 errors generated.
-      #     make: *** [Python/remote_debugging.o] Error 1
+      # 【役割①】3.14_armv7l_fix.patch をスキップ
+      #   CPython 3.14.7 で上流マージ済み (gh-145616) のため
+      #   冗長・Hunk FAILED になる。
       #
-      #   原因: Python 3.14 で追加された remote_debugging.c が
-      #     pwritev  (Android API 24+)
-      #     memfd_create (Android API 30+)
-      #   を使う。NDK の __ANDROID_API__=23 ターゲット制約でこれらは
-      #   宣言なし扱いとなり、-Werror=implicit-function-declaration でビルド失敗。
+      # 【役割②】Modules/Setup.local に *disabled* セクションを追加
+      #   _remote_debugging (拡張モジュール) と grp を無効化。
       #
-      # 【なぜ config.site 単独では不十分か】
-      #   ac_cv_func_pwritev=no を config.site に書くと、CPython 内部の
-      #   条件分岐が中途半端に崩れ、別の未定義シンボル
-      #   (search_linux_map_for_section) が新たに出てしまう
-      #   (CPython issue #139275 のコメント参照)。
-      #   ファイルごとビルドから外すのが最も安全。
+      # 【役割③】Python ソースに pwritev/preadv スタブマクロを挿入 ← 今回追加
+      #   ビルドエラーの詳細:
+      #     Python/remote_debug.h:1262   : preadv  (Android API 24+)
+      #     Python/remote_debugging.c:51 : pwritev (Android API 24+)
+      #     → -Werror=implicit-function-declaration でビルド失敗
       #
-      # 【Modules/Setup.local vs Makefile の違い】
-      #   Setup.local の *disabled* は Modules/ 下の拡張モジュール (.so) のみ有効。
-      #   Python/remote_debugging.c はコアファイルで Modules/ ではなく
-      #   Python/ 配下にあるため、Makefile の PYTHON_OBJS から
-      #   Python/remote_debugging.o を直接 sed で除去する。
+      #   【なぜ config.site だけでは不十分か】
+      #     ac_cv_func_pwritev=no を config.site で指定すると HAVE_PWRITEV=0 となるが、
+      #     CPython 3.14 のコードは HAVE_PWRITEV を確認せず pwritev を直接呼ぶため
+      #     コンパイルエラーが消えない。さらに HAVE_PWRITEV=0 にすると別の未定義
+      #     シンボル (search_linux_map_for_section) が出てしまう (CPython #139275)。
       #
-      # 【armv7l パッチについて】
-      #   p4a 同梱の 3.14_armv7l_fix.patch は CPython 3.14.7 で上流マージ済み
-      #   (gh-145616) のため冗長で Hunk FAILED → シムでスキップ。
-      - name: "Shim patch: skip armv7l fix + remove remote_debugging.o from Makefile"
+      #   【解決策: ソースにマクロスタブを挿入】
+      #     remote_debugging.c と remote_debug.h の先頭に
+      #     Android API < 24 のとき pwritev/preadv を -1 に展開するマクロを挿入する。
+      #     configure は HAVE_PWRITEV=1 のまま (コードパスを変えない) だが、
+      #     実際のコンパイルではマクロが優先されてエラーが消える。
+      #     リモートデバッグ機能は -1 を返すだけで無害に失敗し、
+      #     mhxx_rng アプリへの影響はゼロ。
+      - name: "Shim: skip armv7l patch / disable _remote_debugging / stub pwritev+preadv"
         run: |
           mkdir -p patch-shim
           cat > patch-shim/patch << 'SHIM_EOF'
@@ -126,36 +110,48 @@ jobs:
             prev="$a"
           done
 
-          # Python ビルドディレクトリを検出したら Setup.local と Makefile を修正する
+          # Python ビルドディレクトリを検出 (Modules/ があれば Python ソース)
           if [ -n "$build_dir" ] && [ -d "$build_dir/Modules" ]; then
 
-            # ① Modules/Setup.local: _remote_debugging と grp を無効化
+            # ① Modules/Setup.local: 拡張モジュールの無効化
             setup_local="$build_dir/Modules/Setup.local"
             if ! grep -q '^\*disabled\*' "$setup_local" 2>/dev/null; then
-              {
-                echo '*disabled*'
-                echo '_remote_debugging'
-                echo 'grp'
-              } >> "$setup_local"
-              echo "[shim] Added *disabled* section to Modules/Setup.local"
+              printf '*disabled*\n_remote_debugging\ngrp\n' >> "$setup_local"
+              echo "[shim] Added *disabled* section to Setup.local"
             fi
 
-            # ② Makefile: Python/remote_debugging.o をコアビルドから除外
-            #    (configure 後に Makefile が生成済みのタイミングで呼ばれるため
-            #     sed で直接書き換える。行末スペース・行頭スペースの両パターンに対応)
-            makefile="$build_dir/Makefile"
-            if [ -f "$makefile" ]; then
-              sed -i 's/Python\/remote_debugging\.o[[:space:]]*//' "$makefile"
-              sed -i 's/[[:space:]]*Python\/remote_debugging\.o//' "$makefile"
-              echo "[shim] Removed Python/remote_debugging.o from Makefile"
-            fi
+            # ② remote_debugging.c / remote_debug.h にスタブマクロを挿入
+            #    Android NDK では __ANDROID_API__ がターゲット API レベルを示す。
+            #    API 24 未満では pwritev/preadv が宣言されないため、
+            #    マクロで -1 を返すスタブを先頭に追加する。
+            STUB='/* [build-shim] Android API<24: stub pwritev/preadv */
+          #if defined(__ANDROID_API__) && (__ANDROID_API__ < 24)
+          #  ifndef pwritev
+          #    define pwritev(fd, iov, n, off) (-1)
+          #  endif
+          #  ifndef preadv
+          #    define preadv(fd, iov, n, off) (-1)
+          #  endif
+          #endif'
+            for f in \
+              "$build_dir/Python/remote_debugging.c" \
+              "$build_dir/Python/remote_debug.h"
+            do
+              if [ -f "$f" ] && ! grep -q 'build-shim.*stub pwritev' "$f" 2>/dev/null; then
+                printf '%s\n' "$STUB" > /tmp/_shim_prepend.tmp
+                cat "$f" >> /tmp/_shim_prepend.tmp
+                mv /tmp/_shim_prepend.tmp "$f"
+                echo "[shim] Patched $(basename $f): inserted pwritev/preadv stubs"
+              fi
+            done
+
           fi
 
           # 3.14_armv7l_fix.patch は CPython 3.14.7 で上流マージ済み → スキップ
           for a in "$@"; do
             case "$a" in
               *3.14_armv7l_fix.patch*)
-                echo "[shim] Skipping redundant armv7l/sysconfig patch (fixed upstream in CPython 3.14.7)"
+                echo "[shim] Skipping redundant 3.14_armv7l_fix.patch (fixed upstream)"
                 exit 0
                 ;;
             esac
@@ -165,9 +161,9 @@ jobs:
           SHIM_EOF
           chmod +x patch-shim/patch
 
-      # CONFIG_SITE でコンパイラに「関数なし」と伝える。
-      # Makefile 除去が主対策、config.site は念のための二重対策。
-      # (config.site 単独では search_linux_map_for_section エラーが出るため)
+      # CONFIG_SITE: getgrgid だけ抑制 (pwritev/preadv はソースパッチで対処)
+      # pwritev=no を config.site に書くと search_linux_map_for_section エラーが
+      # 発生するため削除した (CPython #139275)
       - name: Write CONFIG_SITE
         run: |
           mkdir -p patches
@@ -175,10 +171,6 @@ jobs:
           # grp モジュール: getgrgid は宣言があるが Android に getgrent 等が無い
           # (CPython issue #114875)
           ac_cv_func_getgrgid=no
-          # remote_debugging.c: pwritev は API 24+、memfd_create は API 30+ 必須
-          # Makefile 除去と二重対策 (config.site 単独は search_linux_map_for_section エラー)
-          ac_cv_func_pwritev=no
-          ac_cv_func_memfd_create=no
           SITE_EOF
 
       - name: Build with Buildozer
