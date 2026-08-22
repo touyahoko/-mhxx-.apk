@@ -13,10 +13,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # .buildozer をキャッシュして2回目以降のビルドを高速化する。
-      # キャッシュキーはbuildozer.specとこのワークフローファイル自体を含める。
-      # 後段のsedパッチ(pythonバージョン指定など)やCONFIG_SITEの内容を
-      # 変えたときに、古いキャッシュを引きずらないようにするため。
+      # .buildozer をキャッシュして 2 回目以降のビルドを高速化する。
+      # キャッシュキーは buildozer.spec とこのワークフローファイルを含める。
+      # 後段の sed パッチや CONFIG_SITE の内容を変えたとき古いキャッシュを
+      # 引きずらないようにするため。
       - name: Cache Buildozer global directory
         uses: actions/cache@v4
         with:
@@ -30,10 +30,10 @@ jobs:
           key: buildozer-local-${{ hashFiles('buildozer.spec', '.github/workflows/build-apk.yml') }}
 
       # ArtemSBulgakov/buildozer-action の Dockerfile は ppa:openjdk-r/ppa を
-      # 追加してJDK17を入れているが、ベースイメージがUbuntu 26.04 (resolute) に
-      # 切り替わった影響でこのPPAがまだresolute向けパッケージを公開しておらず
-      # apt update が404で失敗する。本家が直るまでの暫定パッチとして、
-      # アクションをローカルにチェックアウトしてPPA追加行だけ削除して使う。
+      # 追加して JDK17 を入れているが、ベースイメージが Ubuntu 26.04 (resolute) に
+      # 切り替わった影響でこの PPA がまだ resolute 向けパッケージを公開しておらず
+      # apt update が 404 で失敗する。本家が直るまでの暫定パッチとして
+      # アクションをローカルにチェックアウトして PPA 追加行だけ削除して使う。
       - name: Checkout patched buildozer-action
         uses: actions/checkout@v4
         with:
@@ -46,8 +46,8 @@ jobs:
 
       # entrypoint.py が起動直後に `sudo chown -R user /github/workspace` を
       # 実行するが、ベースイメージ側で "user" アカウントが正しく作られていない
-      # (buildozer-action issue #42 として既知・未解決) ため
-      # "chown: invalid user: 'user'" で毎回落ちる。存在しなければ作る形で回避する。
+      # (buildozer-action issue #42) ため "chown: invalid user: 'user'" で落ちる。
+      # 存在しなければ作る形で回避する。
       - name: Ensure buildozer 'user' account exists
         run: |
           cat > /tmp/ensure_user.txt << 'EOF'
@@ -55,22 +55,16 @@ jobs:
           EOF
           sed -i '1r /tmp/ensure_user.txt' buildozer-action-patched/Dockerfile
 
-      # ベースイメージがPython 3.14/Ubuntu 26.04になり、pipまわりで2つ問題が出る。
-      # (1) entrypoint.py内の `pip install --user buildozer` がPEP 668の
-      #     externally-managed-environmentで拒否される。
-      # (2) python-for-androidの依存関係インストール時、aptで入っている
-      #     wheel/setuptools等をpipがアップグレードしようとして
-      #     "uninstall-no-record-file"で失敗する。
-      # PIP_BREAK_SYSTEM_PACKAGES と PIP_IGNORE_INSTALLED を常時有効にして
-      # 両方まとめて回避する(使い捨てのCIコンテナなので影響なし)。
+      # Python 3.14 / Ubuntu 26.04 に切り替わった後の pip 問題を回避する。
+      # (1) pip install --user が PEP 668 で拒否される
+      # (2) apt 管理パッケージを pip がアップグレードしようとして失敗する
       - name: Work around pip/apt conflicts on the new base image
         run: |
           sed -i '1a ENV PIP_BREAK_SYSTEM_PACKAGES=1' buildozer-action-patched/Dockerfile
           sed -i '1a ENV PIP_IGNORE_INSTALLED=1' buildozer-action-patched/Dockerfile
 
-      # buildozer.spec の android.accept_sdk_license はデフォルトFalseで、
-      # 対話的にライセンスに同意できないCI環境ではSDK Build-Toolsの
-      # インストールがスキップされ aidl not found で失敗する。
+      # buildozer.spec の android.accept_sdk_license はデフォルト False のため
+      # CI 環境で SDK Build-Tools のインストールがスキップされ aidl not found で失敗する。
       - name: Auto-accept Android SDK licenses
         run: |
           if grep -q '^#\?android\.accept_sdk_license' buildozer.spec; then
@@ -79,52 +73,50 @@ jobs:
             echo 'android.accept_sdk_license = True' >> buildozer.spec
           fi
 
-      # p4a側のsdkmanager呼び出しがbuildozer.specのaccept_sdk_licenseを
-      # 拾えていない既知バグ(kivy/python-for-android issue #3194)があるため、
-      # コマンド自体にyesを繋いで、途中のどんな確認にも強制的に
-      # 「y」を答え続けることでも二重に防御する(Build with Buildozerのcommand参照)。
-
-      # ビルド対象Pythonを3.14系の最新パッチ(3.14.7)に固定する。
-      # デフォルトのままだとPython 3.14で新規追加されたremote_debugging
-      # モジュール(PEP 768)がAndroidでコンパイルできず失敗するが
-      # (kivy/python-for-android issue #3274)、p4a同梱のpatches/3.14_fix_remote_debug.patch
-      # がこれを修正済みであることをログで確認している。
-      # hostpython3もpython3と完全に同じバージョンを指定する必要がある
-      # (異なると "python3 should have same version as hostpython3" で失敗)。
-      - name: Pin target Python to latest 3.14.x patch
+      # Python を 3.14.7 に固定する。
+      # hostpython3 も同じバージョンを指定しないと
+      # "python3 should have same version as hostpython3" で失敗する。
+      - name: Pin target Python to 3.14.7
         run: sed -i 's/^requirements = python3,/requirements = python3==3.14.7,hostpython3==3.14.7,/' buildozer.spec
 
-      # p4a同梱のpatches/3.14_armv7l_fix.patch(32bit ARM向けsysconfig修正)は
-      # CPython 3.14.7側で同種の修正が本家に既に取り込まれている
-      # (gh-145616)ため冗長になっており、"Hunk FAILED"で適用に失敗する。
+      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      # patch シム: armv7l パッチスキップ + remote_debugging コア除外
+      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
       #
-      # p4a.source_dir で自前のpatch済みチェックアウトを使わせる方法を
-      # 3回試したが、ログで確認する限り一度も効いておらず、常にp4aが
-      # 自分でcloneした .buildozer/android/platform/python-for-android の
-      # 方が使われ続けていた。この設定はこの環境では機能しないと判断し、
-      # 別の方法に切り替える。
+      # 【今回修正した問題】
+      #   Python/remote_debugging.c のビルドエラー:
+      #     51 | written = pwritev(handle->memfd, local, 1, offset);
+      #     2 errors generated.
+      #     make: *** [Python/remote_debugging.o] Error 1
       #
-      # 実際にログで確認した通りの呼び出し
-      # (RAN: /usr/bin/patch -t -d ... -i .../3.14_armv7l_fix.patch)を
-      # そのまま狙い撃ちする。/usr/bin より先に見つかる場所に偽の patch
-      # コマンドを置き、対象がこの1ファイルの時だけ何もせず成功扱いにし、
-      # それ以外は本物の /usr/bin/patch にそのまま渡す。
+      #   原因: Python 3.14 で追加された remote_debugging.c が
+      #     pwritev  (Android API 24+)
+      #     memfd_create (Android API 30+)
+      #   を使う。NDK の __ANDROID_API__=23 ターゲット制約でこれらは
+      #   宣言なし扱いとなり、-Werror=implicit-function-declaration でビルド失敗。
       #
-      # 併せて、このシムに相乗りして Modules/Setup.local に
-      # "*disabled*" 指定を書き込み、_remote_debugging モジュールを
-      # 丸ごとビルド対象から外す。preadv/pwritev/process_vm_readv を
-      # 個別にconfigureで「無い」と偽う方法も試したが、CPython内部の
-      # 条件分岐が中途半端に食い違い、別の未定義シンボル
-      # (search_linux_map_for_section)が新たに出てしまった
-      # (CPython側でも同じ症状の報告あり、issue #139275のコメント参照)。
-      # モジュールごと外す方が安全。patchは-dで対象ディレクトリを
-      # 受け取るため、そこから抽出してSetup.localに書き込む
-      # (hostpython3・python3どちらのビルドにも同じ仕組みで対応できる)。
-      - name: "Shim patch: skip redundant armv7l fix, disable _remote_debugging"
+      # 【なぜ config.site 単独では不十分か】
+      #   ac_cv_func_pwritev=no を config.site に書くと、CPython 内部の
+      #   条件分岐が中途半端に崩れ、別の未定義シンボル
+      #   (search_linux_map_for_section) が新たに出てしまう
+      #   (CPython issue #139275 のコメント参照)。
+      #   ファイルごとビルドから外すのが最も安全。
+      #
+      # 【Modules/Setup.local vs Makefile の違い】
+      #   Setup.local の *disabled* は Modules/ 下の拡張モジュール (.so) のみ有効。
+      #   Python/remote_debugging.c はコアファイルで Modules/ ではなく
+      #   Python/ 配下にあるため、Makefile の PYTHON_OBJS から
+      #   Python/remote_debugging.o を直接 sed で除去する。
+      #
+      # 【armv7l パッチについて】
+      #   p4a 同梱の 3.14_armv7l_fix.patch は CPython 3.14.7 で上流マージ済み
+      #   (gh-145616) のため冗長で Hunk FAILED → シムでスキップ。
+      - name: "Shim patch: skip armv7l fix + remove remote_debugging.o from Makefile"
         run: |
           mkdir -p patch-shim
-          cat > patch-shim/patch << 'EOF'
+          cat > patch-shim/patch << 'SHIM_EOF'
           #!/bin/sh
+          # -d <dir> 引数から Python ビルドディレクトリを取得する
           build_dir=""
           prev=""
           for a in "$@"; do
@@ -133,7 +125,11 @@ jobs:
             fi
             prev="$a"
           done
+
+          # Python ビルドディレクトリを検出したら Setup.local と Makefile を修正する
           if [ -n "$build_dir" ] && [ -d "$build_dir/Modules" ]; then
+
+            # ① Modules/Setup.local: _remote_debugging と grp を無効化
             setup_local="$build_dir/Modules/Setup.local"
             if ! grep -q '^\*disabled\*' "$setup_local" 2>/dev/null; then
               {
@@ -141,30 +137,49 @@ jobs:
                 echo '_remote_debugging'
                 echo 'grp'
               } >> "$setup_local"
+              echo "[shim] Added *disabled* section to Modules/Setup.local"
+            fi
+
+            # ② Makefile: Python/remote_debugging.o をコアビルドから除外
+            #    (configure 後に Makefile が生成済みのタイミングで呼ばれるため
+            #     sed で直接書き換える。行末スペース・行頭スペースの両パターンに対応)
+            makefile="$build_dir/Makefile"
+            if [ -f "$makefile" ]; then
+              sed -i 's/Python\/remote_debugging\.o[[:space:]]*//' "$makefile"
+              sed -i 's/[[:space:]]*Python\/remote_debugging\.o//' "$makefile"
+              echo "[shim] Removed Python/remote_debugging.o from Makefile"
             fi
           fi
+
+          # 3.14_armv7l_fix.patch は CPython 3.14.7 で上流マージ済み → スキップ
           for a in "$@"; do
             case "$a" in
               *3.14_armv7l_fix.patch*)
-                echo "[shim] Skipping redundant armv7l/sysconfig patch (already fixed upstream in this CPython version)"
+                echo "[shim] Skipping redundant armv7l/sysconfig patch (fixed upstream in CPython 3.14.7)"
                 exit 0
                 ;;
             esac
           done
+
           exec /usr/bin/patch "$@"
-          EOF
+          SHIM_EOF
           chmod +x patch-shim/patch
 
-      # 保険: grp モジュール (grpmodule.c) はAndroidに無い
-      # setgrent/getgrent/endgrent を無条件に使っておりコンパイルできない
-      # (CPython本体の既知バグ、python/cpython issue #114875)。
-      # CONFIG_SITE(autoconfの標準機構)でCPythonのconfigureに
-      # 「getgrgidも無い」と嘘の判定をさせ、grpモジュール自体を
-      # ビルド対象から外すことで、もし3.14でも再現した場合に備える。
-      - name: Write CONFIG_SITE to preemptively skip the grp module
+      # CONFIG_SITE でコンパイラに「関数なし」と伝える。
+      # Makefile 除去が主対策、config.site は念のための二重対策。
+      # (config.site 単独では search_linux_map_for_section エラーが出るため)
+      - name: Write CONFIG_SITE
         run: |
           mkdir -p patches
-          echo 'ac_cv_func_getgrgid=no' > patches/android-config.site
+          cat > patches/android-config.site << 'SITE_EOF'
+          # grp モジュール: getgrgid は宣言があるが Android に getgrent 等が無い
+          # (CPython issue #114875)
+          ac_cv_func_getgrgid=no
+          # remote_debugging.c: pwritev は API 24+、memfd_create は API 30+ 必須
+          # Makefile 除去と二重対策 (config.site 単独は search_linux_map_for_section エラー)
+          ac_cv_func_pwritev=no
+          ac_cv_func_memfd_create=no
+          SITE_EOF
 
       - name: Build with Buildozer
         uses: ./buildozer-action-patched
