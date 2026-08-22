@@ -81,23 +81,16 @@
             on_release: root.toggle_camera()
 
     # ── 映像表示エリア ──
-    # Camera ウィジェット + OCR 領域オーバーレイ を重ねる
+    # Camera ウィジェットは「開始」ボタン押下時にコードで動的生成する
+    # (起動時に生成するとAndroid 12+でCAMERA権限未付与のままカメラAPIを
+    #  呼び出しSecurityExceptionが発生してクラッシュするため)
     FloatLayout:
+        id: camera_container
         size_hint_y: 1
-
-        # Switch 画面映像 (カメラインデックスは App.stream_camera_index)
-        Camera:
-            id: live_camera
-            index: app.stream_camera_index if hasattr(app, 'stream_camera_index') else 2
-            resolution: (1280, 720)
-            play: root.camera_playing
-            allow_stretch: True
-            keep_ratio: True
-            pos: self.parent.pos
-            size: self.parent.size
 
         # 映像停止中はプレースホルダーラベル
         Label:
+            id: placeholder_label
             text: '── Switch 映像をここに表示 ──\n▶ 開始ボタンでカメラを起動'
             font_size: '14sp'
             color: 0.5, 0.5, 0.5, 1

@@ -19,6 +19,13 @@ from kivy.properties import (
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.widget import Widget
 
+# Android権限モジュール (Android実機のみ存在)
+try:
+    from android.permissions import request_permissions, check_permission, Permission as _Permission
+    _ANDROID = True
+except ImportError:
+    _ANDROID = False
+
 from hardware.usb_video import list_cameras, find_external_camera_index
 from hardware.charm_detector import detect_from_texture, TargetCharm
 from mhxx_rng import KIND_TABLES, SKILL_NAMES
@@ -120,6 +127,7 @@ class StreamScreen(BoxLayout):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._camera_list: list[dict] = []
+        self._camera_widget = None   # Camera ウィジェットは開始時に動的生成
         Clock.schedule_once(self._init_ui, 0)
 
     def _init_ui(self, _dt):
@@ -164,15 +172,75 @@ class StreamScreen(BoxLayout):
             pass
 
     def start_camera(self):
-        """カメラ映像を開始する。"""
+        """カメラ映像を開始する。
+
+        Android 12+ では CAMERA 権限が実行時に必要。
+        権限が未付与の場合はリクエストダイアログを出してから再試行する。
+        Camera ウィジェットは権限確認後に動的生成する（起動時生成は
+        SecurityException によるクラッシュを引き起こすため禁止）。
+        """
+        if _ANDROID:
+            if not check_permission(_Permission.CAMERA):
+                self.status_text = "カメラ権限をリクエスト中..."
+
+                def _on_perm(permissions, results):
+                    granted = results and all(results)
+                    if granted:
+                        Clock.schedule_once(lambda dt: self._do_start_camera())
+                    else:
+                        Clock.schedule_once(
+                            lambda dt: setattr(
+                                self, "status_text",
+                                "カメラ権限が拒否されました。設定から手動で許可してください。"
+                            )
+                        )
+
+                request_permissions([_Permission.CAMERA], _on_perm)
+                return
+
+        self._do_start_camera()
+
+    def _do_start_camera(self):
+        """Camera ウィジェットを動的生成してカメラを開始する。"""
+        from kivy.uix.camera import Camera as KivyCamera
+
+        app = App.get_running_app()
+        idx = getattr(app, "stream_camera_index", 2)
+
+        # 既存の Camera があれば先に破棄
+        if self._camera_widget is not None:
+            self.ids.camera_container.remove_widget(self._camera_widget)
+            self._camera_widget = None
+
+        cam = KivyCamera(
+            index=idx,
+            resolution=(1280, 720),
+            play=True,
+            allow_stretch=True,
+            keep_ratio=True,
+        )
+        cam.pos = self.ids.camera_container.pos
+        cam.size = self.ids.camera_container.size
+        self.ids.camera_container.bind(
+            pos=lambda _, v: setattr(cam, "pos", v),
+            size=lambda _, v: setattr(cam, "size", v),
+        )
+        # OCR 領域セレクターの下に挿入（index=0 = 最背面）
+        self.ids.camera_container.add_widget(cam, index=len(self.ids.camera_container.children))
+        self._camera_widget = cam
+
         self.camera_playing = True
         self.status_text = "映像を配信中..."
-        # OCR 領域の復元
-        crop = App.get_running_app().stream_crop_ratio
+        crop = getattr(app, "stream_crop_ratio", (0.1, 0.25, 0.9, 0.75))
         if hasattr(self.ids, "region_selector"):
             self.ids.region_selector.load_ratio(crop)
 
     def stop_camera(self):
+        """カメラを停止し Camera ウィジェットを破棄する。"""
+        if self._camera_widget is not None:
+            self._camera_widget.play = False
+            self.ids.camera_container.remove_widget(self._camera_widget)
+            self._camera_widget = None
         self.camera_playing = False
         self.status_text = "映像停止中"
 
@@ -187,7 +255,7 @@ class StreamScreen(BoxLayout):
         if not self.camera_playing:
             self.ocr_result_text = "先にカメラを開始してください"
             return
-        cam = getattr(self.ids, "live_camera", None)
+        cam = self._camera_widget
         if cam is None or cam.texture is None:
             self.ocr_result_text = "カメラテクスチャが取得できません"
             return

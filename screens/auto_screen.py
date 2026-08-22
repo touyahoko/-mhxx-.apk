@@ -261,10 +261,13 @@ class AutoScreen(BoxLayout):
         return detect_from_texture(cam.texture, target, crop)
 
     def _get_live_camera(self):
+        """StreamScreen の Camera ウィジェットを取得する。
+        Camera は動的生成のため ids には存在せず、_camera_widget 属性を参照する。
+        """
         try:
             scr = App.get_running_app().root.ids.get("stream_screen")
-            if scr and hasattr(scr.ids, "live_camera"):
-                return scr.ids.live_camera
+            if scr is not None:
+                return getattr(scr, "_camera_widget", None)
         except Exception:
             pass
         return None
