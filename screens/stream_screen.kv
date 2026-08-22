@@ -1,0 +1,173 @@
+#:kivy 2.3.1
+# 映像タブ ─ UVCキャプチャーカードのライブ映像 + OCR領域選択
+
+# ──────────────────────────────────────────
+# OCR 認識領域の矩形オーバーレイ
+# ──────────────────────────────────────────
+<OcrRegionSelector>:
+    canvas.after:
+        # 半透明アウトライン
+        Color:
+            rgba: 0.2, 0.8, 0.4, 0.6
+        Line:
+            rectangle:
+                (self.x + self.rect_x * self.width,
+                 self.y + self.rect_y * self.height,
+                 self.rect_w * self.width,
+                 self.rect_h * self.height)
+            width: 2
+        # コーナーマーク (左上)
+        Color:
+            rgba: 0.2, 0.8, 0.4, 1
+        Rectangle:
+            pos:
+                (self.x + self.rect_x * self.width - 4,
+                 self.y + (self.rect_y + self.rect_h) * self.height - 4)
+            size: 8, 8
+        # コーナーマーク (右下)
+        Rectangle:
+            pos:
+                (self.x + (self.rect_x + self.rect_w) * self.width - 4,
+                 self.y + self.rect_y * self.height - 4)
+            size: 8, 8
+
+# ──────────────────────────────────────────
+# StreamScreen 本体
+# ──────────────────────────────────────────
+<StreamScreen>:
+    orientation: 'vertical'
+    spacing: '4dp'
+    padding: ['6dp', '4dp', '6dp', '4dp']
+
+    # ── カメラ選択バー ──
+    BoxLayout:
+        size_hint_y: None
+        height: '36dp'
+        spacing: '6dp'
+
+        Label:
+            text: 'カメラ'
+            size_hint_x: None
+            width: '50dp'
+            font_size: '12sp'
+            halign: 'left'
+            valign: 'middle'
+            text_size: self.size
+
+        Spinner:
+            id: camera_spinner
+            size_hint_x: 1
+            font_size: '11sp'
+            values: root.camera_labels if root.camera_labels else ['[2] 外部(USB)カメラ']
+            text: root.camera_labels[0] if root.camera_labels else '[2] 外部(USB)カメラ'
+            on_text: root.on_camera_selected(self.text)
+
+        Button:
+            text: '更新'
+            size_hint_x: None
+            width: '52dp'
+            font_size: '11sp'
+            background_color: 0.2, 0.4, 0.6, 1
+            on_release: root._refresh_camera_list()
+
+        Button:
+            id: toggle_btn
+            text: '■ 停止' if root.camera_playing else '▶ 開始'
+            size_hint_x: None
+            width: '64dp'
+            font_size: '12sp'
+            background_color:
+                (0.2, 0.55, 0.2, 1) if not root.camera_playing else (0.6, 0.2, 0.2, 1)
+            on_release: root.toggle_camera()
+
+    # ── 映像表示エリア ──
+    # Camera ウィジェット + OCR 領域オーバーレイ を重ねる
+    FloatLayout:
+        size_hint_y: 1
+
+        # Switch 画面映像 (カメラインデックスは App.stream_camera_index)
+        Camera:
+            id: live_camera
+            index: app.stream_camera_index if hasattr(app, 'stream_camera_index') else 2
+            resolution: (1280, 720)
+            play: root.camera_playing
+            allow_stretch: True
+            keep_ratio: True
+            pos: self.parent.pos
+            size: self.parent.size
+
+        # 映像停止中はプレースホルダーラベル
+        Label:
+            text: '── Switch 映像をここに表示 ──\n▶ 開始ボタンでカメラを起動'
+            font_size: '14sp'
+            color: 0.5, 0.5, 0.5, 1
+            opacity: 0 if root.camera_playing else 1
+            pos: self.parent.pos
+            size: self.parent.size
+            halign: 'center'
+            valign: 'middle'
+            text_size: self.size
+
+        # OCR 認識領域セレクター (透明, タッチで矩形を描く)
+        OcrRegionSelector:
+            id: region_selector
+            pos: self.parent.pos
+            size: self.parent.size
+            opacity: 1 if root.show_region else 0
+
+    # ── OCR 操作バー ──
+    BoxLayout:
+        size_hint_y: None
+        height: '36dp'
+        spacing: '6dp'
+
+        ToggleButton:
+            text: '領域表示'
+            state: 'down'
+            size_hint_x: None
+            width: '70dp'
+            font_size: '11sp'
+            on_state: root.show_region = (self.state == 'down')
+
+        Label:
+            text: 'ドラッグで認識領域を選択 →'
+            font_size: '10sp'
+            color: 0.6, 0.6, 0.6, 1
+            halign: 'left'
+            valign: 'middle'
+            text_size: self.size
+            size_hint_x: 1
+
+        Button:
+            text: 'テスト OCR'
+            size_hint_x: None
+            width: '80dp'
+            font_size: '11sp'
+            background_color: 0.5, 0.3, 0.7, 1
+            on_release: root.run_test_ocr()
+
+    # ── OCR 結果 ──
+    Label:
+        id: ocr_result_label
+        text: root.ocr_result_text if root.ocr_result_text else '(テスト OCR 結果がここに表示されます)'
+        size_hint_y: None
+        height: '28dp'
+        font_size: '12sp'
+        color:
+            (0.2, 0.9, 0.4, 1) if root.ocr_result_text.startswith('✔') else
+            (0.9, 0.4, 0.2, 1) if root.ocr_result_text.startswith('✘') else
+            (0.7, 0.7, 0.7, 1)
+        halign: 'left'
+        valign: 'middle'
+        text_size: self.size
+
+    # ── ステータスバー ──
+    Label:
+        text: root.status_text
+        size_hint_y: None
+        height: '22dp'
+        font_size: '10sp'
+        color: 0.55, 0.55, 0.55, 1
+        halign: 'left'
+        valign: 'middle'
+        text_size: self.size

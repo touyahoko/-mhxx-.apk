@@ -1,0 +1,90 @@
+#:kivy 2.3.1
+#:import IntInput screens.common.IntInput
+
+<AimPointScreen>:
+    do_scroll_x: False
+    BoxLayout:
+        id: content
+        orientation: 'vertical'
+        size_hint_y: None
+        height: self.minimum_height
+        padding: '10dp'
+        spacing: '6dp'
+
+        SectionLabel:
+            text: '狙い目 (クエスト/マカフシギ/天運)'
+
+        BoxLayout:
+            size_hint_y: None
+            height: '42dp'
+            spacing: '8dp'
+            FieldLabel:
+                text: 'フレーム'
+            IntInput:
+                id: frame_input
+                text: '0'
+
+        BoxLayout:
+            size_hint_y: None
+            height: '42dp'
+            spacing: '6dp'
+            FieldLabel:
+                text: 'モード'
+            ToggleButton:
+                id: mode_quest
+                text: 'クエスト'
+                group: 'aim_mode'
+                state: 'down'
+                font_size: '13sp'
+            ToggleButton:
+                id: mode_halcyon
+                text: 'マカフシギ'
+                group: 'aim_mode'
+                font_size: '13sp'
+            ToggleButton:
+                id: mode_juju
+                text: '天運'
+                group: 'aim_mode'
+                font_size: '13sp'
+
+        BoxLayout:
+            size_hint_y: None
+            height: '42dp' if mode_quest.state == 'down' else 0
+            opacity: 1 if mode_quest.state == 'down' else 0
+            spacing: '8dp'
+            FieldLabel:
+                text: 'チャーム数'
+            IntInput:
+                id: charm_count_input
+                text: '10'
+            HintLabel:
+                text: '(2〜40 / クエストのみ)'
+                size_hint_x: 0.6
+                height: '38dp'
+
+        BoxLayout:
+            size_hint_y: None
+            height: '38dp'
+            spacing: '8dp'
+            FieldLabel:
+                text: '全ランク表示'
+            CheckBox:
+                id: all_ranks_check
+                active: True
+                size_hint_x: None
+                width: '34dp'
+
+        PrimaryButton:
+            text: '計算'
+            on_release: root._calc()
+
+        Label:
+            id: output_label
+            text: ''
+            font_size: '13sp'
+            size_hint_y: None
+            height: self.texture_size[1] + 16
+            halign: 'left'
+            valign: 'top'
+            text_size: self.width, None
+            color: 0.9, 0.9, 0.93, 1
