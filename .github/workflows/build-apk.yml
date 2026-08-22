@@ -13,17 +13,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # キャッシュをクリアして p4a の Git 初期化エラーを防止
+      # 破損したキャッシュが残っていると git config コマンドが失敗する
+      - name: Clear broken buildozer cache
+        run: |
+          rm -rf ~/.buildozer/.buildozer/android/platform/python-for-android/.git
+          rm -rf .buildozer/android/platform/python-for-android/.git
+
       - name: Cache Buildozer global directory
         uses: actions/cache@v4
         with:
           path: ~/.buildozer
-          key: buildozer-global-${{ hashFiles('buildozer.spec', '.github/workflows/build-apk.yml') }}
+          key: buildozer-global-${{ hashFiles('buildozer.spec', '.github/workflows/build-apk.yml') }}-v2
 
       - name: Cache Buildozer local directory
         uses: actions/cache@v4
         with:
           path: .buildozer
-          key: buildozer-local-${{ hashFiles('buildozer.spec', '.github/workflows/build-apk.yml') }}
+          key: buildozer-local-${{ hashFiles('buildozer.spec', '.github/workflows/build-apk.yml') }}-v2
 
       # ArtemSBulgakov/buildozer-action の Dockerfile は ppa:openjdk-r/ppa を
       # 追加して JDK17 を入れているが、Ubuntu 26.04 (resolute) ではこの PPA が
