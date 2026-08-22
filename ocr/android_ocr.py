@@ -26,37 +26,49 @@ except Exception as exc:  # noqa: BLE001  (Android以外の環境では必ずこ
     _ANDROID = False
     _IMPORT_ERROR = str(exc)
 
+# Java インターフェースクラスをモジュール読み込み時に定義しようとすると、
+# pyjnius が JVM 上でクラスを検索する。Play Services が未ロードの場合や
+# クラスローダーの初期化タイミングによってはクラッシュするため、
+# try/except で保護し、失敗時はフォールバックする。
+_JAVA_CLASSES_OK = False
+_OnSuccessListener = None
+_OnFailureListener = None
+
+if _ANDROID:
+    try:
+        class _OnSuccessListener(PythonJavaClass):
+            __javainterfaces__ = ["com/google/android/gms/tasks/OnSuccessListener"]
+            __javacontext__ = "app"
+
+            def __init__(self, callback: Callable[[object], None]) -> None:
+                super().__init__()
+                self._callback = callback
+
+            @java_method("(Ljava/lang/Object;)V")
+            def onSuccess(self, result) -> None:
+                self._callback(result)
+
+        class _OnFailureListener(PythonJavaClass):
+            __javainterfaces__ = ["com/google/android/gms/tasks/OnFailureListener"]
+            __javacontext__ = "app"
+
+            def __init__(self, callback: Callable[[Exception], None]) -> None:
+                super().__init__()
+                self._callback = callback
+
+            @java_method("(Ljava/lang/Exception;)V")
+            def onFailure(self, exception) -> None:
+                self._callback(exception)
+
+        _JAVA_CLASSES_OK = True
+    except Exception as _jc_exc:  # noqa: BLE001
+        _JAVA_CLASSES_OK = False
+        _IMPORT_ERROR = f"Java クラス定義エラー: {_jc_exc}"
+
 
 def is_available() -> bool:
     """この端末でAndroidネイティブOCRが利用可能かどうか。"""
-    return _ANDROID
-
-
-if _ANDROID:
-
-    class _OnSuccessListener(PythonJavaClass):
-        __javainterfaces__ = ["com/google/android/gms/tasks/OnSuccessListener"]
-        __javacontext__ = "app"
-
-        def __init__(self, callback: Callable[[object], None]) -> None:
-            super().__init__()
-            self._callback = callback
-
-        @java_method("(Ljava/lang/Object;)V")
-        def onSuccess(self, result) -> None:
-            self._callback(result)
-
-    class _OnFailureListener(PythonJavaClass):
-        __javainterfaces__ = ["com/google/android/gms/tasks/OnFailureListener"]
-        __javacontext__ = "app"
-
-        def __init__(self, callback: Callable[[Exception], None]) -> None:
-            super().__init__()
-            self._callback = callback
-
-        @java_method("(Ljava/lang/Exception;)V")
-        def onFailure(self, exception) -> None:
-            self._callback(exception)
+    return _ANDROID and _JAVA_CLASSES_OK
 
 
 def recognize_text(
@@ -72,8 +84,11 @@ def recognize_text(
     バックがどのスレッドで呼ばれるかは端末依存の可能性があるため、
     呼び出し側で Clock.schedule_once を使ってUIスレッドに戻すこと)。
     """
-    if not _ANDROID:
+    if not _ANDROID or not _JAVA_CLASSES_OK:
         on_error(f"この端末ではAndroidのOCR機能を利用できません ({_IMPORT_ERROR})")
+        return
+    if _OnSuccessListener is None or _OnFailureListener is None:
+        on_error("OCR リスナークラスの初期化に失敗しました")
         return
     try:
         InputImage = autoclass("com.google.mlkit.vision.common.InputImage")
