@@ -13,24 +13,29 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # キャッシュをクリアして p4a の Git 初期化エラーを防止
-      # 破損したキャッシュが残っていると git config コマンドが失敗する
-      - name: Clear broken buildozer cache
-        run: |
-          rm -rf ~/.buildozer/.buildozer/android/platform/python-for-android/.git
-          rm -rf .buildozer/android/platform/python-for-android/.git
-
+      # キャッシュキーに -v3 を付与
+      # （-v2 までは破損した p4a .git を含む可能性があるため刷新）
       - name: Cache Buildozer global directory
         uses: actions/cache@v4
         with:
           path: ~/.buildozer
-          key: buildozer-global-${{ hashFiles('buildozer.spec', '.github/workflows/build-apk.yml') }}-v2
+          key: buildozer-global-${{ hashFiles('buildozer.spec', '.github/workflows/build-apk.yml') }}-v3
 
       - name: Cache Buildozer local directory
         uses: actions/cache@v4
         with:
           path: .buildozer
-          key: buildozer-local-${{ hashFiles('buildozer.spec', '.github/workflows/build-apk.yml') }}-v2
+          key: buildozer-local-${{ hashFiles('buildozer.spec', '.github/workflows/build-apk.yml') }}-v3
+
+      # ★ キャッシュ復元の「後」に実行することが必須 ★
+      # 復元前に削除しても、その後キャッシュで上書きされるため意味がない。
+      # 復元後に削除することで、破損した .git ディレクトリを取り除き、
+      # buildozer が python-for-android を正常に git clone できるようにする。
+      - name: Clear broken p4a git directory (post-cache-restore)
+        run: |
+          rm -rf .buildozer/android/platform/python-for-android/.git
+          rm -rf ~/.buildozer/android/platform/python-for-android/.git
+          echo "[fix] Removed potentially broken p4a .git directories"
 
       # ArtemSBulgakov/buildozer-action の Dockerfile は ppa:openjdk-r/ppa を
       # 追加して JDK17 を入れているが、Ubuntu 26.04 (resolute) ではこの PPA が
@@ -75,33 +80,6 @@ jobs:
       # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
       # patch シム — 3 つの役割を持つ
       # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-      #
-      # 【役割①】3.14_armv7l_fix.patch をスキップ
-      #   CPython 3.14.7 で上流マージ済み (gh-145616) のため
-      #   冗長・Hunk FAILED になる。
-      #
-      # 【役割②】Modules/Setup.local に *disabled* セクションを追加
-      #   _remote_debugging (拡張モジュール) と grp を無効化。
-      #
-      # 【役割③】Python ソースに pwritev/preadv スタブマクロを挿入 ← 今回追加
-      #   ビルドエラーの詳細:
-      #     Python/remote_debug.h:1262   : preadv  (Android API 24+)
-      #     Python/remote_debugging.c:51 : pwritev (Android API 24+)
-      #     → -Werror=implicit-function-declaration でビルド失敗
-      #
-      #   【なぜ config.site だけでは不十分か】
-      #     ac_cv_func_pwritev=no を config.site で指定すると HAVE_PWRITEV=0 となるが、
-      #     CPython 3.14 のコードは HAVE_PWRITEV を確認せず pwritev を直接呼ぶため
-      #     コンパイルエラーが消えない。さらに HAVE_PWRITEV=0 にすると別の未定義
-      #     シンボル (search_linux_map_for_section) が出てしまう (CPython #139275)。
-      #
-      #   【解決策: ソースにマクロスタブを挿入】
-      #     remote_debugging.c と remote_debug.h の先頭に
-      #     Android API < 24 のとき pwritev/preadv を -1 に展開するマクロを挿入する。
-      #     configure は HAVE_PWRITEV=1 のまま (コードパスを変えない) だが、
-      #     実際のコンパイルではマクロが優先されてエラーが消える。
-      #     リモートデバッグ機能は -1 を返すだけで無害に失敗し、
-      #     mhxx_rng アプリへの影響はゼロ。
       - name: "Shim: skip armv7l patch / disable _remote_debugging / stub pwritev+preadv"
         run: |
           mkdir -p patch-shim
@@ -128,9 +106,6 @@ jobs:
             fi
 
             # ② remote_debugging.c / remote_debug.h にスタブマクロを挿入
-            #    Android NDK では __ANDROID_API__ がターゲット API レベルを示す。
-            #    API 24 未満では pwritev/preadv が宣言されないため、
-            #    マクロで -1 を返すスタブを先頭に追加する。
             STUB='/* [build-shim] Android API<24: stub pwritev/preadv */
           #if defined(__ANDROID_API__) && (__ANDROID_API__ < 24)
           #  ifndef pwritev
@@ -168,9 +143,6 @@ jobs:
           SHIM_EOF
           chmod +x patch-shim/patch
 
-      # CONFIG_SITE: getgrgid だけ抑制 (pwritev/preadv はソースパッチで対処)
-      # pwritev=no を config.site に書くと search_linux_map_for_section エラーが
-      # 発生するため削除した (CPython #139275)
       - name: Write CONFIG_SITE
         run: |
           mkdir -p patches
