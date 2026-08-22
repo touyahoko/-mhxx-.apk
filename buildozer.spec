@@ -62,3 +62,9 @@ android.enable_androidx = True
 [buildozer]
 log_level = 2
 warn_on_root = 1
+
+# 【重要】p4a の破損したキャッシュによる git config エラー対策
+# buildozer.spec や ワークフロー設定が変更されたときは、
+# キャッシュを新しいバージョンに切り替えるために -v2 などをキー名に追加してください
+# または、GitHub Actions の Settings > Actions > General > 
+# Artifact and log retention を確認して、古いキャッシュを削除してください
