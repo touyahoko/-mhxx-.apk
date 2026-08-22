@@ -1,28 +1,18 @@
 # Android クロスビルド向け CONFIG_SITE 上書きファイル
 #
-# NDK の sysroot ヘッダーは全 API レベル共通であり、高い API でしか
+# NDK の sysroot ヘッダーは全 API レベル共通のため、高い API でしか
 # 使えない関数も宣言されている。configure はヘッダーを見て「有り」と
-# 判定するが、低い minapi でコンパイルすると実際には使えないため
-# -Werror=implicit-function-declaration でビルドが失敗する。
-# ここで「無い」と明示して HAVE_* マクロを 0 に固定することで、
-# 該当コードパスを ifdef ガードで丸ごとスキップさせる。
+# 判定するが、低い minapi でコンパイルすると実際には使えず失敗する。
 #
-# ── grp モジュール (Android API 23+) ──────────────────────────────────
-# getgrgid は宣言されているが getgrent / setgrent / endgrent が無い。
-# Modules/grpmodule.c のビルドをスキップ。
+# ── grp モジュール ──────────────────────────────────────────────────
+# getgrgid は宣言されているが getgrent/setgrent/endgrent が Android に無い。
+# Modules/grpmodule.c のビルドをスキップして解決。
 # 上流バグ: https://github.com/python/cpython/issues/114875
 ac_cv_func_getgrgid=no
 
-# ── remote_debugging.c (Python 3.14 新規ファイル) ────────────────────
-# Python 3.14 で追加された Python/remote_debugging.c は
-# pwritev (Android API 24+) と memfd_create (Android API 30+) を使う。
-# minapi=23/24 でビルドすると NDK ターゲット制約でコンパイルエラーになる。
-#
-# ログの該当行:
-#   51 |  written = pwritev(handle->memfd, local, 1, offset);
-#   2 errors generated.
-#   make: *** [Python/remote_debugging.o] Error 1
-#
-# mhxx_rng はリモートデバッグ機能を一切使わないため除外しても無問題。
-ac_cv_func_pwritev=no
-ac_cv_func_memfd_create=no
+# ── pwritev / preadv について ────────────────────────────────────────
+# これらは Android API 24+ のみ利用可能で、minapi=23 では宣言なしエラーになる。
+# ただし ac_cv_func_pwritev=no を設定すると別の未定義シンボル
+# (search_linux_map_for_section) が発生する (CPython issue #139275)。
+# そのため config.site ではなく、GitHub Actions のシムスクリプトで
+# remote_debugging.c / remote_debug.h の先頭にマクロスタブを挿入して対応する。
