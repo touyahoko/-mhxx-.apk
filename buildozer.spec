@@ -8,6 +8,8 @@ source.dir = .
 source.include_exts = py,kv,otf,ttf,txt,png,jpg
 # arduino/ は .ino スケッチのみで Python ソースではないため APK から除外
 source.exclude_dirs = tests, bin, .buildozer, .github, .git, arduino
+# patches ディレクトリは p4a の cross-compilation config に必要
+source.include_dirs = patches
 
 version = 1.0.0
 
@@ -27,6 +29,7 @@ icon.filename = %(source.dir)s/assets/icons/icon.png
 # BLUETOOTH_CONNECT / SCAN    : HC-05 Bluetooth SPP (Android 12+)
 # USB_HOST はランタイム権限ではなく android.features で宣言する
 android.permissions = CAMERA,READ_MEDIA_IMAGES,READ_EXTERNAL_STORAGE,BLUETOOTH,BLUETOOTH_ADMIN,BLUETOOTH_CONNECT,BLUETOOTH_SCAN
+
 android.api = 34
 android.minapi = 23
 android.archs = arm64-v8a,armeabi-v7a
@@ -58,3 +61,8 @@ android.enable_androidx = True
 [buildozer]
 log_level = 2
 warn_on_root = 1
+
+# 2026-08-22 修正: Python 3.14 remote_debugging.c のコンパイルエラー
+# エラー内容: preadv/pwritev が Android API 23 では利用不可
+# 対応方法: CONFIG_SITE で ac_cv_func_pwritev=no を指定
+#          patches/android-config.site の設定を確実に使用させる
