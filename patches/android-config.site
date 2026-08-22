@@ -1,14 +1,28 @@
-# autoconf の CONFIG_SITE 機構を使い、Android向けクロスビルド時に
-# getgrgid が「無い」と判定させることで、CPythonの grp モジュール
-# (Modules/grpmodule.c) のビルド自体をスキップさせるためのファイル。
+# Android クロスビルド向け CONFIG_SITE 上書きファイル
 #
-# 背景: grp モジュールは configure スクリプト上 getgrgid の有無だけを
-# 判定基準にしているが、Androidには getgrgid はあっても getgrent /
-# setgrent / endgrent が無いため、grpmodule.c のコンパイルが
-# 「暗黙の関数宣言はエラー」という最近のNDKの既定挙動と衝突して失敗する。
-# (上流バグ: https://github.com/python/cpython/issues/114875)
+# NDK の sysroot ヘッダーは全 API レベル共通であり、高い API でしか
+# 使えない関数も宣言されている。configure はヘッダーを見て「有り」と
+# 判定するが、低い minapi でコンパイルすると実際には使えないため
+# -Werror=implicit-function-declaration でビルドが失敗する。
+# ここで「無い」と明示して HAVE_* マクロを 0 に固定することで、
+# 該当コードパスを ifdef ガードで丸ごとスキップさせる。
 #
-# mhxx_rng アプリ自体は grp モジュールを一切使用しないため、
-# ビルドから除外しても動作に影響しない。
-
+# ── grp モジュール (Android API 23+) ──────────────────────────────────
+# getgrgid は宣言されているが getgrent / setgrent / endgrent が無い。
+# Modules/grpmodule.c のビルドをスキップ。
+# 上流バグ: https://github.com/python/cpython/issues/114875
 ac_cv_func_getgrgid=no
+
+# ── remote_debugging.c (Python 3.14 新規ファイル) ────────────────────
+# Python 3.14 で追加された Python/remote_debugging.c は
+# pwritev (Android API 24+) と memfd_create (Android API 30+) を使う。
+# minapi=23/24 でビルドすると NDK ターゲット制約でコンパイルエラーになる。
+#
+# ログの該当行:
+#   51 |  written = pwritev(handle->memfd, local, 1, offset);
+#   2 errors generated.
+#   make: *** [Python/remote_debugging.o] Error 1
+#
+# mhxx_rng はリモートデバッグ機能を一切使わないため除外しても無問題。
+ac_cv_func_pwritev=no
+ac_cv_func_memfd_create=no
