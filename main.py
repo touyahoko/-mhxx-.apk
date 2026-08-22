@@ -82,6 +82,22 @@ class MhxxRngApp(App):
     kind = NumericProperty(0)  # 0=風化 1=古び 2=光る 3=なぞの
     fps = NumericProperty(30)  # 経過時間表示換算用 (30=オリジナル / 60=Switch2)
 
+    def on_start(self):
+        """起動直後に Android 権限を一括リクエストする。
+
+        Camera ウィジェットは権限付与後に初めて生成するため、
+        ここでリクエストするだけでよい（結果コールバックは不要）。
+        Android 以外では何もしない。
+        """
+        try:
+            from android.permissions import request_permissions, Permission
+            request_permissions([
+                Permission.CAMERA,
+                Permission.READ_EXTERNAL_STORAGE,
+            ])
+        except ImportError:
+            pass  # Android 以外の環境では無視
+
     def build(self):
         self.title = "MHXX RNG Tool"
         for kv_name in (
