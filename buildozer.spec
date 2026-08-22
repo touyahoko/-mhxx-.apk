@@ -8,8 +8,6 @@ source.dir = .
 source.include_exts = py,kv,otf,ttf,txt,png,jpg
 # arduino/ は .ino スケッチのみで Python ソースではないため APK から除外
 source.exclude_dirs = tests, bin, .buildozer, .github, .git, arduino
-# patches ディレクトリは p4a の cross-compilation config に必要
-source.include_dirs = patches
 
 version = 1.0.0
 
@@ -27,16 +25,19 @@ icon.filename = %(source.dir)s/assets/icons/icon.png
 # READ_EXTERNAL_STORAGE : ギャラリー画像選択 (Android 12以下)
 # BLUETOOTH / BLUETOOTH_ADMIN : HC-05 Bluetooth SPP (Android 11以下)
 # BLUETOOTH_CONNECT / SCAN    : HC-05 Bluetooth SPP (Android 12+)
-# USB_HOST はランタイム権限ではなく android.features で宣言する
+# BLUETOOTH / BLUETOOTH_ADMIN : HC-05 Bluetooth SPP (Android 11以下)
+# BLUETOOTH_CONNECT / SCAN    : HC-05 Bluetooth SPP (Android 12+)
+# USB ホストモードはランタイム権限不要。マニフェストへの uses-feature 宣言は省略可能
+# (p4a の apk コマンドが --feature を非対応のため android.features は使わない)
 android.permissions = CAMERA,READ_MEDIA_IMAGES,READ_EXTERNAL_STORAGE,BLUETOOTH,BLUETOOTH_ADMIN,BLUETOOTH_CONNECT,BLUETOOTH_SCAN
-
 android.api = 34
 android.minapi = 23
 android.archs = arm64-v8a,armeabi-v7a
 android.allow_backup = True
 
-# USB ホストモード: OTG ハブ経由で Arduino / UVC キャプチャーカードを接続するために必要
-android.features = android.hardware.usb.host
+# USB ホストモードは android.features では宣言できない (p4a apk が --feature を非対応)
+# USB OTG はホスト側が許可するだけで動作するため、マニフェスト宣言は省略可能。
+# 必要であれば android.manifest.extra_features = android.hardware.usb.host と書く。
 
 # Google ML Kit (オンデバイス日本語テキスト認識、無料・APIキー不要)。
 # ocr/android_ocr.py から pyjnius 経由で呼び出す。ML KitはAndroidXが
@@ -61,8 +62,3 @@ android.enable_androidx = True
 [buildozer]
 log_level = 2
 warn_on_root = 1
-
-# 2026-08-22 修正: Python 3.14 remote_debugging.c のコンパイルエラー
-# エラー内容: preadv/pwritev が Android API 23 では利用不可
-# 対応方法: CONFIG_SITE で ac_cv_func_pwritev=no を指定
-#          patches/android-config.site の設定を確実に使用させる
