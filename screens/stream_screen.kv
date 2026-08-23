@@ -10,25 +10,17 @@
         Color:
             rgba: 0.2, 0.8, 0.4, 0.6
         Line:
-            rectangle:
-                (self.x + self.rect_x * self.width,
-                 self.y + self.rect_y * self.height,
-                 self.rect_w * self.width,
-                 self.rect_h * self.height)
+            rectangle: self.x + self.rect_x * self.width, self.y + self.rect_y * self.height, self.rect_w * self.width, self.rect_h * self.height
             width: 2
         # コーナーマーク (左上)
         Color:
             rgba: 0.2, 0.8, 0.4, 1
         Rectangle:
-            pos:
-                (self.x + self.rect_x * self.width - 4,
-                 self.y + (self.rect_y + self.rect_h) * self.height - 4)
+            pos: self.x + self.rect_x * self.width - 4, self.y + (self.rect_y + self.rect_h) * self.height - 4
             size: 8, 8
         # コーナーマーク (右下)
         Rectangle:
-            pos:
-                (self.x + (self.rect_x + self.rect_w) * self.width - 4,
-                 self.y + self.rect_y * self.height - 4)
+            pos: self.x + (self.rect_x + self.rect_w) * self.width - 4, self.y + self.rect_y * self.height - 4
             size: 8, 8
 
 # ──────────────────────────────────────────
