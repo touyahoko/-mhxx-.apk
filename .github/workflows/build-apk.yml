@@ -2,77 +2,77 @@ name: Build APK
 
 on:
   push:
-    branches: [main]
-  workflow_dispatch:
+    branches: [main, master]
+  workflow_dispatch: {}
 
 jobs:
   build-android:
+    name: Build for Android
     runs-on: ubuntu-latest
-
     steps:
-      - name: リポジトリをチェックアウト
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: buildozer グローバルキャッシュを復元
+      # キャッシュキーに -v4 を付与
+      # （-v2 までは破損した p4a .git を含む可能性があるため刷新）
+      - name: Cache Buildozer global directory
         uses: actions/cache@v4
         with:
           path: ~/.buildozer
-          key: buildozer-global-${{ hashFiles('buildozer.spec') }}-v3
+          key: buildozer-global-${{ hashFiles('buildozer.spec', '.github/workflows/build-apk.yml') }}-v4
 
-      - name: buildozer ローカルキャッシュを復元
+      - name: Cache Buildozer local directory
         uses: actions/cache@v4
         with:
           path: .buildozer
-          key: buildozer-local-${{ hashFiles('buildozer.spec') }}-v3
+          key: buildozer-local-${{ hashFiles('buildozer.spec', '.github/workflows/build-apk.yml') }}-v4
 
-      # =====================================================================
-      # 【修正箇所】
-      # 旧: rm -rf .buildozer/.../p4a/.git  ← .git を消すと
-      #     buildozer が "git config --get remote.origin.url" で即死する
-      # 新: .git がない(または remote 未設定)なら init + remote add で復元
-      # =====================================================================
-      - name: p4a の git remote を修復
+      # ★ キャッシュ復元の「後」に p4a ディレクトリごと削除 ★
+      #
+      # 【.git だけ削除では不十分だった理由】
+      # .git を消すと git が親ディレクトリ（アプリ本体の .git）を探し、
+      # そこに remote.origin.url がなくエラーコード 1 で失敗し続けた。
+      #
+      # 【解決策】
+      # python-for-android ディレクトリごと丸ごと削除する。
+      # buildozer が自動的に git clone し直すため .git の状態に左右されない。
+      # Android SDK/NDK 等はこのディレクトリ外にキャッシュされるので
+      # ビルド時間への影響は p4a の再クローン分（数分）のみ。
+      - name: Remove p4a directory to force fresh clone (post-cache-restore)
         run: |
-          for dir in \
-            ".buildozer/android/platform/python-for-android" \
-            "$HOME/.buildozer/android/platform/python-for-android"; do
-            if [ -d "$dir" ]; then
-              if ! git -C "$dir" config --get remote.origin.url > /dev/null 2>&1; then
-                echo "[fix] git remote が見つかりません → 再初期化します: $dir"
-                rm -rf "$dir/.git"
-                git -C "$dir" init -q
-                git -C "$dir" remote add origin https://github.com/kivy/python-for-android.git
-                echo "[fix] p4a git remote を復元しました: $dir"
-              else
-                echo "[fix] p4a git remote は正常です: $dir"
-              fi
-            fi
-          done
+          rm -rf .buildozer/android/platform/python-for-android
+          rm -rf ~/.buildozer/android/platform/python-for-android
+          echo "[fix] Removed p4a directory — will be freshly git-cloned by buildozer"
 
-      - name: buildozer-action をパッチ用にクローン
+      # ArtemSBulgakov/buildozer-action の Dockerfile は ppa:openjdk-r/ppa を
+      # 追加して JDK17 を入れているが、Ubuntu 26.04 (resolute) ではこの PPA が
+      # まだ resolute 向けパッケージを公開しておらず apt update が 404 で失敗する。
+      - name: Checkout patched buildozer-action
         uses: actions/checkout@v4
         with:
           repository: ArtemSBulgakov/buildozer-action
           ref: v1
           path: buildozer-action-patched
 
-      - name: Dockerfile の古い PPA 行を削除
-        run: |
-          sed -i '/add-apt-repository ppa:openjdk-r\/ppa/d' buildozer-action-patched/Dockerfile
+      - name: Remove broken openjdk-r PPA line
+        run: sed -i '/add-apt-repository ppa:openjdk-r\/ppa/d' buildozer-action-patched/Dockerfile
 
-      - name: Dockerfile に user 作成レイヤーを追加
+      # ベースイメージで "user" アカウントが存在しないと chown で落ちる
+      # (buildozer-action issue #42)
+      - name: Ensure buildozer 'user' account exists
         run: |
           cat > /tmp/ensure_user.txt << 'EOF'
           RUN if ! id -u user >/dev/null 2>&1; then sudo useradd --create-home --shell /bin/bash user && sudo usermod --append --groups sudo user && echo "user ALL=(ALL) NOPASSWD: ALL" | sudo tee -a /etc/sudoers >/dev/null; fi
           EOF
           sed -i '1r /tmp/ensure_user.txt' buildozer-action-patched/Dockerfile
 
-      - name: Dockerfile に pip 環境変数を追加
+      # Python 3.14 / Ubuntu 26.04 での pip 問題回避
+      - name: Work around pip/apt conflicts on the new base image
         run: |
           sed -i '1a ENV PIP_BREAK_SYSTEM_PACKAGES=1' buildozer-action-patched/Dockerfile
           sed -i '1a ENV PIP_IGNORE_INSTALLED=1' buildozer-action-patched/Dockerfile
 
-      - name: buildozer.spec に SDK ライセンス許可を設定
+      - name: Auto-accept Android SDK licenses
         run: |
           if grep -q '^#\?android\.accept_sdk_license' buildozer.spec; then
             sed -i 's/^#\?android\.accept_sdk_license.*/android.accept_sdk_license = True/' buildozer.spec
@@ -80,11 +80,14 @@ jobs:
             echo 'android.accept_sdk_license = True' >> buildozer.spec
           fi
 
-      - name: buildozer.spec の Python バージョンを 3.14.7 に固定
-        run: |
-          sed -i 's/^requirements = python3,/requirements = python3==3.14.7,hostpython3==3.14.7,/' buildozer.spec
+      # Python 3.14.7 に固定。hostpython3 も同じバージョンが必要
+      - name: Pin target Python to 3.14.7
+        run: sed -i 's/^requirements = python3,/requirements = python3==3.14.7,hostpython3==3.14.7,/' buildozer.spec
 
-      - name: CPython 3.14 用 patch-shim を作成
+      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      # patch シム — 3 つの役割を持つ
+      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      - name: "Shim: skip armv7l patch / disable _remote_debugging / stub pwritev+preadv"
         run: |
           mkdir -p patch-shim
           cat > patch-shim/patch << 'SHIM_EOF'
@@ -147,7 +150,7 @@ jobs:
           SHIM_EOF
           chmod +x patch-shim/patch
 
-      - name: android-config.site を作成
+      - name: Write CONFIG_SITE
         run: |
           mkdir -p patches
           cat > patches/android-config.site << 'SITE_EOF'
@@ -156,19 +159,19 @@ jobs:
           ac_cv_func_getgrgid=no
           SITE_EOF
 
-      - name: APK をビルド
+      - name: Build with Buildozer
         uses: ./buildozer-action-patched
         id: buildozer
         env:
-          CONFIG_SITE: ${{ github.workspace }}/patches/android-config.site
+          CONFIG_SITE: /github/workspace/patches/android-config.site
         with:
           workdir: .
           buildozer_version: stable
-          command: export PATH=/github/workspace/patch-shim:$PATH; yes | buildozer android debug
-          repository_root: .
+          command: "export PATH=/github/workspace/patch-shim:$PATH; yes | buildozer android debug"
 
-      - name: APK をアップロード
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: mhxx-debug-apk
-          path: bin/*.apk
+          name: mhxx-rng-tool-apk
+          path: ${{ steps.buildozer.outputs.filename }}
+          retention-days: 30
