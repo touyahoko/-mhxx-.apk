@@ -1,45 +1,79 @@
-"""MHXX お守り乱数計算機 + Switch 自動認識ループ (Android版)
-
-mhxx_rng.py (デスクトップ版 nx_macro_tool から一切変更せずに移植した
-RNGエンジン) を、タッチ操作向けのKivy UIから呼び出すアプリ。
-
-追加機能 (v2.0):
-  - 映像タブ: USB OTG ハブ経由のキャプチャーカードでSwitch画面をスマホに表示
-  - オートタブ: Arduino Leonardo 連携でお守り自動認識ループ
-    接続方式A: スマホ USB ホスト → Arduino (CDC Serial) → Switch (HID)
-    接続方式B: スマホ Bluetooth (HC-05) → Arduino → Switch (HID)
-"""
+"""MHXX お守り乱数計算機 + Switch 自動認識ループ (Android版)"""
 from __future__ import annotations
 
 import os
+import sys
+import traceback
 
+# ── Kivy 最低限のインポート（ここで失敗するとアプリ自体が起動しない）──
 from kivy.app import App
 from kivy.core.text import LabelBase
 from kivy.lang import Builder
-from kivy.properties import NumericProperty, ObjectProperty
+from kivy.properties import NumericProperty
 from kivy.uix.boxlayout import BoxLayout
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-FONT_DIR = os.path.join(BASE_DIR, "assets", "fonts")
-
-# ---------------------------------------------------------------------------
-# 日本語フォント登録
-#
-# Kivy標準の "Roboto" は日本語グリフを含まないため、"Roboto" という名前を
-# 同梱の Noto Sans JP で上書き登録する。こうすることで、font_name を個別に
-# 指定していない標準ウィジェット (Label/Button/TextInput/Spinner等) も
-# 含めてアプリ全体が自動的に日本語表示に対応する。
-# ---------------------------------------------------------------------------
-_REGULAR = os.path.join(FONT_DIR, "NotoSansJP-Regular.otf")
-_BOLD = os.path.join(FONT_DIR, "NotoSansJP-Bold.otf")
-
-LabelBase.register(name="Roboto", fn_regular=_REGULAR, fn_bold=_BOLD)
-LabelBase.register(name="NotoSansJP", fn_regular=_REGULAR, fn_bold=_BOLD)
+BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
+FONT_DIR  = os.path.join(BASE_DIR, "assets", "fonts")
+_REGULAR  = os.path.join(FONT_DIR, "NotoSansJP-Regular.otf")
+_BOLD     = os.path.join(FONT_DIR, "NotoSansJP-Bold.otf")
 
 
+# =============================================================================
+# エラー表示用ウィジェット
+# （起動クラッシュが発生したときに、原因をそのまま画面に表示する）
+# =============================================================================
+def _make_error_screen(error_text: str):
+    """エラー内容を画面に表示するウィジェットを返す。"""
+    from kivy.uix.scrollview import ScrollView
+    from kivy.uix.label import Label
+    from kivy.uix.boxlayout import BoxLayout as BL
+    from kivy.core.window import Window
+
+    # /sdcard にもテキスト保存（ファイルマネージャーで読める）
+    try:
+        with open("/sdcard/mhxx_crash.txt", "w", encoding="utf-8") as f:
+            f.write(error_text)
+    except Exception:
+        pass
+
+    root = BL(orientation="vertical", padding=10, spacing=6)
+
+    header = Label(
+        text="[b][color=ff4444]起動エラー[/color][/b]\n"
+             "/sdcard/mhxx_crash.txt にも保存しました",
+        markup=True,
+        size_hint_y=None,
+        height=60,
+        halign="left",
+        valign="middle",
+    )
+    header.bind(size=lambda w, s: setattr(w, "text_size", (s[0], None)))
+
+    body = Label(
+        text=error_text,
+        size_hint_y=None,
+        halign="left",
+        valign="top",
+        font_size="11sp",
+    )
+    body.bind(
+        width=lambda w, v: setattr(w, "text_size", (v, None)),
+        texture_size=lambda w, v: setattr(w, "height", v[1]),
+    )
+
+    scroll = ScrollView(size_hint=(1, 1))
+    scroll.add_widget(body)
+
+    root.add_widget(header)
+    root.add_widget(scroll)
+    return root
+
+
+# =============================================================================
+# RootLayout（通常起動時のルートウィジェット）
+# =============================================================================
 class RootLayout(BoxLayout):
     def jump_to_around(self, frame: int) -> None:
-        """検索結果タップ時に、周辺確認タブへフレームを渡して切り替える。"""
         self.ids.around_screen.set_frame(frame)
         self.ids.around_screen._show()
         self.ids.tabs.switch_to(self.ids.around_tab_item)
@@ -53,10 +87,6 @@ class RootLayout(BoxLayout):
         s2_pts: int = 0,
         slot: int = -1,
     ) -> None:
-        """
-        検索タブの「これを狙う」ボタンから呼び出す。
-        TargetCharm を App.auto_target に設定してオートタブへ切り替える。
-        """
         from hardware.charm_detector import TargetCharm
         app = App.get_running_app()
         app.auto_target = TargetCharm(
@@ -68,7 +98,6 @@ class RootLayout(BoxLayout):
             slot=slot,
         )
         self.ids.auto_screen._refresh_target_text()
-        # オートタブを検索して切り替え
         tabs = self.ids.tabs
         for item in tabs.tab_list:
             if item.text == "オート":
@@ -76,19 +105,15 @@ class RootLayout(BoxLayout):
                 break
 
 
+# =============================================================================
+# App クラス
+# =============================================================================
 class MhxxRngApp(App):
-    """アプリ全体で共有する状態 (お守り種類 / フレームレート表示) を持つ。"""
-
-    kind = NumericProperty(0)  # 0=風化 1=古び 2=光る 3=なぞの
-    fps = NumericProperty(30)  # 経過時間表示換算用 (30=オリジナル / 60=Switch2)
+    kind = NumericProperty(0)
+    fps  = NumericProperty(30)
 
     def on_start(self):
-        """起動直後に Android 権限を一括リクエストする。
-
-        Camera ウィジェットは権限付与後に初めて生成するため、
-        ここでリクエストするだけでよい（結果コールバックは不要）。
-        Android 以外では何もしない。
-        """
+        """Android 権限を一括リクエスト（Camera は使用直前にも確認する）。"""
         try:
             from android.permissions import request_permissions, Permission
             request_permissions([
@@ -96,22 +121,55 @@ class MhxxRngApp(App):
                 Permission.READ_EXTERNAL_STORAGE,
             ])
         except ImportError:
-            pass  # Android 以外の環境では無視
+            pass
 
+    # -------------------------------------------------------------------------
+    # build() ── ここで例外が起きてもクラッシュせず画面に表示する
+    # -------------------------------------------------------------------------
     def build(self):
+        try:
+            return self._build_normal()
+        except Exception:  # noqa: BLE001
+            error = traceback.format_exc()
+            return _make_error_screen(error)
+
+    def _build_normal(self):
         self.title = "MHXX RNG Tool"
-        for kv_name in (
+
+        # ── フォント登録（ファイルが見つからない場合もここでキャッチされる）──
+        if os.path.isfile(_REGULAR):
+            LabelBase.register(name="Roboto",     fn_regular=_REGULAR, fn_bold=_BOLD)
+            LabelBase.register(name="NotoSansJP", fn_regular=_REGULAR, fn_bold=_BOLD)
+        else:
+            # フォントが見つからない場合は警告だけ出して続行
+            import warnings
+            warnings.warn(f"フォントファイルが見つかりません: {_REGULAR}", stacklevel=2)
+
+        # ── KV ファイル読み込み ──
+        kv_files = (
             "common.kv",
             "search_screen.kv",
             "around_screen.kv",
             "combo_screen.kv",
             "aimpoint_screen.kv",
             "ocr_screen.kv",
-            "stream_screen.kv",   # v2: USB映像タブ
-            "auto_screen.kv",     # v2: 自動ループタブ
-        ):
-            Builder.load_file(os.path.join(BASE_DIR, "screens", kv_name))
-        Builder.load_file(os.path.join(BASE_DIR, "app.kv"))
+            "stream_screen.kv",
+            "auto_screen.kv",
+        )
+        for kv_name in kv_files:
+            path = os.path.join(BASE_DIR, "screens", kv_name)
+            if not os.path.isfile(path):
+                raise FileNotFoundError(
+                    f"KV ファイルが見つかりません: {path}\n"
+                    f"screens/ フォルダの内容を確認してください。"
+                )
+            Builder.load_file(path)
+
+        app_kv = os.path.join(BASE_DIR, "app.kv")
+        if not os.path.isfile(app_kv):
+            raise FileNotFoundError(f"app.kv が見つかりません: {app_kv}")
+        Builder.load_file(app_kv)
+
         return RootLayout()
 
     def set_kind(self, kind: int) -> None:
