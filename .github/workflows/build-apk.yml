@@ -13,40 +13,31 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # キャッシュキーに -v4 を付与
-      # （-v2 までは破損した p4a .git を含む可能性があるため刷新）
-      - name: Cache Buildozer global directory
+      # ── キャッシュ設定 ──────────────────────────────────────────
+      # .buildozer_global/ = SDK・NDK の実際の保存先（2〜4GB）
+      # .buildozer/        = ビルド成果物・ライブラリ（2GB前後）
+      # ※ python-for-android はキャッシュしない（毎回 git clone）
+      - name: Cache buildozer_global (SDK / NDK)
         uses: actions/cache@v4
         with:
-          path: ~/.buildozer
-          key: buildozer-global-${{ hashFiles('buildozer.spec', '.github/workflows/build-apk.yml') }}-v4
+          path: .buildozer_global
+          key: buildozer-global-sdk-${{ hashFiles('buildozer.spec') }}-v1
 
-      - name: Cache Buildozer local directory
+      - name: Cache .buildozer (build artifacts)
         uses: actions/cache@v4
         with:
           path: .buildozer
           key: buildozer-local-${{ hashFiles('buildozer.spec', '.github/workflows/build-apk.yml') }}-v4
 
-      # ★ キャッシュ復元の「後」に p4a ディレクトリごと削除 ★
-      #
-      # 【.git だけ削除では不十分だった理由】
-      # .git を消すと git が親ディレクトリ（アプリ本体の .git）を探し、
-      # そこに remote.origin.url がなくエラーコード 1 で失敗し続けた。
-      #
-      # 【解決策】
-      # python-for-android ディレクトリごと丸ごと削除する。
-      # buildozer が自動的に git clone し直すため .git の状態に左右されない。
-      # Android SDK/NDK 等はこのディレクトリ外にキャッシュされるので
-      # ビルド時間への影響は p4a の再クローン分（数分）のみ。
-      - name: Remove p4a directory to force fresh clone (post-cache-restore)
+      # ── キャッシュ復元後に p4a をディレクトリごと削除 ─────────
+      # .git だけの削除では親リポジトリの .git を参照して失敗するため
+      # ディレクトリごと削除し buildozer に git clone させる
+      - name: Remove p4a to force fresh clone (post-cache-restore)
         run: |
           rm -rf .buildozer/android/platform/python-for-android
-          rm -rf ~/.buildozer/android/platform/python-for-android
-          echo "[fix] Removed p4a directory — will be freshly git-cloned by buildozer"
+          echo "[fix] Removed p4a — will be freshly cloned by buildozer"
 
-      # ArtemSBulgakov/buildozer-action の Dockerfile は ppa:openjdk-r/ppa を
-      # 追加して JDK17 を入れているが、Ubuntu 26.04 (resolute) ではこの PPA が
-      # まだ resolute 向けパッケージを公開しておらず apt update が 404 で失敗する。
+      # ── buildozer-action のパッチ ───────────────────────────────
       - name: Checkout patched buildozer-action
         uses: actions/checkout@v4
         with:
@@ -57,8 +48,6 @@ jobs:
       - name: Remove broken openjdk-r PPA line
         run: sed -i '/add-apt-repository ppa:openjdk-r\/ppa/d' buildozer-action-patched/Dockerfile
 
-      # ベースイメージで "user" アカウントが存在しないと chown で落ちる
-      # (buildozer-action issue #42)
       - name: Ensure buildozer 'user' account exists
         run: |
           cat > /tmp/ensure_user.txt << 'EOF'
@@ -66,7 +55,6 @@ jobs:
           EOF
           sed -i '1r /tmp/ensure_user.txt' buildozer-action-patched/Dockerfile
 
-      # Python 3.14 / Ubuntu 26.04 での pip 問題回避
       - name: Work around pip/apt conflicts on the new base image
         run: |
           sed -i '1a ENV PIP_BREAK_SYSTEM_PACKAGES=1' buildozer-action-patched/Dockerfile
@@ -80,39 +68,26 @@ jobs:
             echo 'android.accept_sdk_license = True' >> buildozer.spec
           fi
 
-      # Python 3.14.7 に固定。hostpython3 も同じバージョンが必要
       - name: Pin target Python to 3.14.7
         run: sed -i 's/^requirements = python3,/requirements = python3==3.14.7,hostpython3==3.14.7,/' buildozer.spec
 
-      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-      # patch シム — 3 つの役割を持つ
-      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      # ── patch シム ─────────────────────────────────────────────
       - name: "Shim: skip armv7l patch / disable _remote_debugging / stub pwritev+preadv"
         run: |
           mkdir -p patch-shim
           cat > patch-shim/patch << 'SHIM_EOF'
           #!/bin/sh
-          # -d <dir> 引数から Python ビルドディレクトリを取得する
           build_dir=""
           prev=""
           for a in "$@"; do
-            if [ "$prev" = "-d" ]; then
-              build_dir="$a"
-            fi
+            if [ "$prev" = "-d" ]; then build_dir="$a"; fi
             prev="$a"
           done
-
-          # Python ビルドディレクトリを検出 (Modules/ があれば Python ソース)
           if [ -n "$build_dir" ] && [ -d "$build_dir/Modules" ]; then
-
-            # ① Modules/Setup.local: 拡張モジュールの無効化
             setup_local="$build_dir/Modules/Setup.local"
             if ! grep -q '^\*disabled\*' "$setup_local" 2>/dev/null; then
               printf '*disabled*\n_remote_debugging\ngrp\n' >> "$setup_local"
-              echo "[shim] Added *disabled* section to Setup.local"
             fi
-
-            # ② remote_debugging.c / remote_debug.h にスタブマクロを挿入
             STUB='/* [build-shim] Android API<24: stub pwritev/preadv */
           #if defined(__ANDROID_API__) && (__ANDROID_API__ < 24)
           #  ifndef pwritev
@@ -122,30 +97,22 @@ jobs:
           #    define preadv(fd, iov, n, off) (-1)
           #  endif
           #endif'
-            for f in \
-              "$build_dir/Python/remote_debugging.c" \
-              "$build_dir/Python/remote_debug.h"
-            do
+            for f in "$build_dir/Python/remote_debugging.c" "$build_dir/Python/remote_debug.h"; do
               if [ -f "$f" ] && ! grep -q 'build-shim.*stub pwritev' "$f" 2>/dev/null; then
                 printf '%s\n' "$STUB" > /tmp/_shim_prepend.tmp
                 cat "$f" >> /tmp/_shim_prepend.tmp
                 mv /tmp/_shim_prepend.tmp "$f"
-                echo "[shim] Patched $(basename $f): inserted pwritev/preadv stubs"
               fi
             done
-
           fi
-
-          # 3.14_armv7l_fix.patch は CPython 3.14.7 で上流マージ済み → スキップ
           for a in "$@"; do
             case "$a" in
               *3.14_armv7l_fix.patch*)
-                echo "[shim] Skipping redundant 3.14_armv7l_fix.patch (fixed upstream)"
+                echo "[shim] Skipping 3.14_armv7l_fix.patch"
                 exit 0
                 ;;
             esac
           done
-
           exec /usr/bin/patch "$@"
           SHIM_EOF
           chmod +x patch-shim/patch
@@ -154,11 +121,13 @@ jobs:
         run: |
           mkdir -p patches
           cat > patches/android-config.site << 'SITE_EOF'
-          # grp モジュール: getgrgid は宣言があるが Android に getgrent 等が無い
-          # (CPython issue #114875)
           ac_cv_func_getgrgid=no
           SITE_EOF
 
+      # ── ビルド ─────────────────────────────────────────────────
+      # buildozer が SDK/NDK を .buildozer_global/ にダウンロードした後、
+      # platforms;android-34 が入っていなければ sdkmanager でインストールし、
+      # 再度ビルドを試みる（初回のみ2回実行、2回目以降はキャッシュで1回で成功）
       - name: Build with Buildozer
         uses: ./buildozer-action-patched
         id: buildozer
@@ -167,7 +136,44 @@ jobs:
         with:
           workdir: .
           buildozer_version: stable
-          command: "export PATH=/github/workspace/patch-shim:$PATH; yes | buildozer android debug"
+          command: |
+            set -e
+            export PATH=/github/workspace/patch-shim:$PATH
+
+            # SDK platform インストール関数（sdkmanager が存在する場合のみ実行）
+            install_sdk_platform() {
+              local sdk_base="/github/workspace/.buildozer_global/android/platform/android-sdk"
+              local platform_dir="$sdk_base/platforms/android-34"
+              if [ -d "$platform_dir" ]; then
+                echo "[sdk] platforms;android-34 は既にインストール済み"
+                return 0
+              fi
+              for sdkm in \
+                "$sdk_base/tools/bin/sdkmanager" \
+                "$sdk_base/cmdline-tools/latest/bin/sdkmanager" \
+                "$sdk_base/cmdline-tools/bin/sdkmanager"; do
+                if [ -f "$sdkm" ]; then
+                  echo "[sdk] sdkmanager 発見: $sdkm → platforms;android-34 をインストール"
+                  yes | "$sdkm" --licenses > /dev/null 2>&1 || true
+                  yes | "$sdkm" "platforms;android-34" "build-tools;34.0.0"
+                  return 0
+                fi
+              done
+              echo "[sdk] sdkmanager 未発見（SDK 未ダウンロード）"
+              return 1
+            }
+
+            # キャッシュから SDK がある場合は先にプラットフォームをインストール
+            install_sdk_platform || true
+
+            # ビルド実行（初回は SDK/NDK ダウンロードで時間がかかる）
+            if yes | buildozer android debug; then
+              echo "[build] ビルド成功"
+            else
+              echo "[build] 1回目失敗 → SDK platform をインストールして再試行"
+              install_sdk_platform
+              yes | buildozer android debug
+            fi
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
